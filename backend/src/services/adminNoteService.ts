@@ -1,21 +1,13 @@
-import { resolve } from "node:path";
 import type { AdminNote } from "../../../src/types/adminNote";
-import { readJsonArray, writeJsonArray } from "./jsonStore";
-
-const adminNotesPath = resolve(process.cwd(), "backend/src/data/adminNotes.json");
-
-function matchesKey(note: AdminNote, riderId: string, weekKey: string) {
-  return note.riderId === riderId && note.weekKey === weekKey;
-}
+import { adminNoteRepository } from "../repositories/adminNoteRepository";
 
 export async function getAdminNotes(weekKey?: string) {
-  const notes = await readJsonArray<AdminNote>(adminNotesPath);
+  const notes = await adminNoteRepository.getAll();
   return weekKey ? notes.filter((note) => note.weekKey === weekKey) : notes;
 }
 
 export async function getAdminNote(riderId: string, weekKey: string) {
-  const notes = await readJsonArray<AdminNote>(adminNotesPath);
-  return notes.find((note) => matchesKey(note, riderId, weekKey));
+  return adminNoteRepository.getByRiderWeek(riderId, weekKey);
 }
 
 export async function saveAdminNote(input: {
@@ -25,28 +17,30 @@ export async function saveAdminNote(input: {
   note: string;
   updatedBy?: string;
 }) {
-  const notes = await readJsonArray<AdminNote>(adminNotesPath);
+  const existing = await adminNoteRepository.getByRiderWeek(input.riderId, input.weekKey);
+  const trimmedNote = input.note.trim();
+  if (!trimmedNote) {
+    await adminNoteRepository.removeByRiderWeek(input.riderId, input.weekKey);
+  }
+
+  const now = new Date().toISOString();
   const nextNote: AdminNote = {
+    id: adminNoteRepository.idFor(input.riderId, input.weekKey),
     riderId: input.riderId,
     riderName: input.riderName,
     weekKey: input.weekKey,
-    note: input.note,
-    updatedAt: new Date().toISOString(),
+    note: trimmedNote,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
     updatedBy: input.updatedBy || "admin"
   };
 
-  const next = notes.filter((note) => !matchesKey(note, input.riderId, input.weekKey));
-  if (input.note.trim()) {
-    next.push(nextNote);
+  if (trimmedNote) {
+    await adminNoteRepository.saveForRiderWeek(nextNote);
   }
-  await writeJsonArray(adminNotesPath, next);
   return nextNote;
 }
 
 export async function deleteAdminNote(riderId: string, weekKey: string) {
-  const notes = await readJsonArray<AdminNote>(adminNotesPath);
-  await writeJsonArray(
-    adminNotesPath,
-    notes.filter((note) => !matchesKey(note, riderId, weekKey))
-  );
+  await adminNoteRepository.removeByRiderWeek(riderId, weekKey);
 }

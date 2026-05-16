@@ -6,6 +6,9 @@ import type { RiderProfile } from "../../../src/types/rider";
 import riders from "../../../src/data/sampleRiders.json";
 import { requiredOrderColumns } from "../../../src/utils/excelParser";
 import { extractBaseName, matchRiderByName } from "../../../src/utils/riderMatcher";
+import { analysisRepository } from "../repositories/analysisRepository";
+import { riderRepository } from "../repositories/riderRepository";
+import { uploadRepository } from "../repositories/uploadRepository";
 
 const parsedDir = path.join(process.cwd(), "backend", "src", "data", "parsed");
 const riderData = riders as RiderProfile[];
@@ -288,23 +291,45 @@ async function parseWorkbook(filePath: string, week: string, fileName: string): 
 
 export async function getUploadedWeeks() {
   const files = await readdir(parsedDir);
-  const uploads = await Promise.all(
+  const parsedUploads = await Promise.all(
     files
       .filter((file) => file.endsWith(".json"))
       .map(async (file) => {
         const parsed = JSON.parse(await readFile(path.join(parsedDir, file), "utf-8")) as ParsedUpload;
-          return {
-            week: parsed.week,
+        const existing = await uploadRepository.getByWeek(parsed.week);
+        if (!existing) {
+          await uploadRepository.save({
+            id: parsed.week,
+            weekKey: parsed.week,
             fileName: parsed.fileName,
             uploadedAt: parsed.uploadedAt,
-            orderCount: parsed.orders.length,
-            completedTotal: parsed.orders.reduce((sum, order) => sum + order.completedCount, 0),
-            issueCount: parsed.issues.length,
-            status: "uploaded"
-          };
+            uploadedBy: "admin",
+            totalRows: parsed.orders.length + parsed.issues.length,
+            validRows: parsed.orders.length,
+            invalidRows: parsed.issues.length,
+            detectedSheets: [parsed.sheetName].filter(Boolean),
+            status: "parsed",
+            fileSignature: `${parsed.fileName}:${parsed.orders.length}:${parsed.uploadedAt}`
+          });
+        }
+        return {
+          week: parsed.week,
+          weekKey: parsed.week,
+          fileName: parsed.fileName,
+          uploadedAt: parsed.uploadedAt,
+          orderCount: parsed.orders.length,
+          completedTotal: parsed.orders.reduce((sum, order) => sum + order.completedCount, 0),
+          issueCount: parsed.issues.length,
+          status: existing?.status ?? "parsed",
+          deletionCandidate: false
+        };
       })
   );
-  return uploads.sort((a, b) => a.week.localeCompare(b.week, "ko"));
+  const candidates = await uploadRepository.markDeletionCandidates(8);
+  const candidateWeeks = new Set(candidates.filter((item) => item.deletionCandidate).map((item) => item.weekKey));
+  return parsedUploads
+    .map((upload) => ({ ...upload, deletionCandidate: candidateWeeks.has(upload.weekKey) }))
+    .sort((a, b) => a.week.localeCompare(b.week, "ko"));
 }
 
 export async function receiveUploadPreview(file: Express.Multer.File | undefined, week: string) {
@@ -354,6 +379,21 @@ export async function saveUploadedExcel(file: Express.Multer.File | undefined, w
     };
 
     await writeFile(parsedPathForWeek(week), JSON.stringify(parsed, null, 2), "utf-8");
+    await uploadRepository.save({
+      id: week,
+      weekKey: week,
+      fileName,
+      uploadedAt: parsed.uploadedAt,
+      uploadedBy: "admin",
+      totalRows: orders.length + issues.length,
+      validRows: orders.length,
+      invalidRows: issues.length,
+      detectedSheets: [preview.sheetName],
+      status: "parsed",
+      fileSignature: `${fileName}:${orders.length}:${parsed.uploadedAt}`
+    });
+    await analysisRepository.invalidateWeek(week);
+    await riderRepository.clear();
     return parsed;
   } finally {
     await unlink(file.path).catch(() => undefined);

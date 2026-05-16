@@ -5,6 +5,7 @@ import { AppLayout } from "../components/common/AppLayout";
 import { useAuth } from "../hooks/useAuth";
 import { AdminDashboard } from "../pages/AdminDashboard";
 import { CoachingMessagePage } from "../pages/CoachingMessagePage";
+import { DataManagementPage } from "../pages/DataManagementPage";
 import { DataValidationPage } from "../pages/DataValidationPage";
 import { ExcelUploadPage } from "../pages/ExcelUploadPage";
 import { LoginPage } from "../pages/LoginPage";
@@ -37,6 +38,7 @@ export function App() {
       <Route path="/analysis" element={protectedPage(["admin"], <RiderAnalysisPage />)} />
       <Route path="/missions" element={protectedPage(["admin"], <MissionRecommendPage />)} />
       <Route path="/coaching" element={protectedPage(["admin"], <CoachingMessagePage />)} />
+      <Route path="/data-management" element={protectedPage(["admin"], <DataManagementPage />)} />
       <Route path="/rider" element={protectedPage(["admin", "rider"], <RiderDashboardPage />)} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

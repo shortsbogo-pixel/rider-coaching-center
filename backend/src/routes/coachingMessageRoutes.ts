@@ -48,7 +48,8 @@ router.put("/:riderId", async (req, res, next) => {
       riderName: req.body.riderName,
       weekKey: req.body.weekKey,
       autoMessage: req.body.autoMessage,
-      customMessage: req.body.customMessage
+      customMessage: req.body.customMessage,
+      updatedBy: req.body.updatedBy
     });
     res.json(message);
   } catch (error) {

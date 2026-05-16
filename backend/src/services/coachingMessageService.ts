@@ -1,21 +1,14 @@
-import { resolve } from "node:path";
 import type { CustomCoachingMessage } from "../../../src/types/coaching";
-import { readJsonArray, writeJsonArray } from "./jsonStore";
-
-const customMessagesPath = resolve(process.cwd(), "backend/src/data/customCoachingMessages.json");
-
-function matchesKey(message: CustomCoachingMessage, riderId: string, weekKey: string) {
-  return message.riderId === riderId && message.weekKey === weekKey;
-}
+import { coachingMessageRepository } from "../repositories/coachingMessageRepository";
 
 export async function getCustomCoachingMessages(weekKey?: string) {
-  const messages = await readJsonArray<CustomCoachingMessage>(customMessagesPath);
+  const messages = await coachingMessageRepository.getAll();
   return weekKey ? messages.filter((message) => message.weekKey === weekKey) : messages;
 }
 
 export async function getCustomCoachingMessage(riderId: string, weekKey: string) {
-  const messages = await readJsonArray<CustomCoachingMessage>(customMessagesPath);
-  return messages.find((message) => matchesKey(message, riderId, weekKey));
+  const message = await coachingMessageRepository.getByRiderWeek(riderId, weekKey);
+  return message?.isCustom ? message : undefined;
 }
 
 export async function saveCustomCoachingMessage(input: {
@@ -24,28 +17,31 @@ export async function saveCustomCoachingMessage(input: {
   weekKey: string;
   autoMessage: string;
   customMessage: string;
+  updatedBy?: string;
 }) {
-  const messages = await readJsonArray<CustomCoachingMessage>(customMessagesPath);
   const nextMessage: CustomCoachingMessage = {
+    id: coachingMessageRepository.idFor(input.riderId, input.weekKey),
     riderId: input.riderId,
     riderName: input.riderName,
     weekKey: input.weekKey,
     autoMessage: input.autoMessage,
     customMessage: input.customMessage,
     isCustom: true,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    updatedBy: input.updatedBy || "admin"
   };
 
-  const next = messages.filter((message) => !matchesKey(message, input.riderId, input.weekKey));
-  next.push(nextMessage);
-  await writeJsonArray(customMessagesPath, next);
+  await coachingMessageRepository.saveForRiderWeek(nextMessage);
   return nextMessage;
 }
 
 export async function resetCustomCoachingMessage(riderId: string, weekKey: string) {
-  const messages = await readJsonArray<CustomCoachingMessage>(customMessagesPath);
-  await writeJsonArray(
-    customMessagesPath,
-    messages.filter((message) => !matchesKey(message, riderId, weekKey))
-  );
+  const existing = await coachingMessageRepository.getByRiderWeek(riderId, weekKey);
+  if (!existing) return;
+  await coachingMessageRepository.saveForRiderWeek({
+    ...existing,
+    customMessage: "",
+    isCustom: false,
+    updatedAt: new Date().toISOString()
+  });
 }

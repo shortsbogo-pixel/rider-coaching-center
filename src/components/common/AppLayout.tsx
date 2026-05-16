@@ -1,4 +1,4 @@
-import { BarChart3, FileSpreadsheet, Home, LogOut, MessageSquareText, ShieldCheck, Target, UserRound } from "lucide-react";
+import { BarChart3, Database, FileSpreadsheet, Home, LogOut, MessageSquareText, ShieldCheck, Target, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
@@ -10,6 +10,7 @@ const adminNavItems = [
   { to: "/analysis", label: "분석", icon: BarChart3 },
   { to: "/missions", label: "미션", icon: Target },
   { to: "/coaching", label: "코칭", icon: MessageSquareText },
+  { to: "/data-management", label: "데이터", icon: Database },
   { to: "/rider", label: "라이더", icon: UserRound }
 ];
 
@@ -43,7 +44,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
       <main className="page-wrap">{children}</main>
 
-      <nav className={`bottom-nav ${navItems.length === 7 ? "seven" : "single"}`} aria-label="주요 메뉴">
+      <nav className={`bottom-nav ${user?.role === "rider" ? "single" : ""}`} aria-label="주요 메뉴" style={{ gridTemplateColumns: `repeat(${navItems.length + 1}, 1fr)` }}>
         {navItems.map((item) => {
           const Icon = item.icon;
           return (

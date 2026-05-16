@@ -16,6 +16,7 @@ export interface CoachingMessage {
 }
 
 export interface CustomCoachingMessage {
+  id?: string;
   riderId: string;
   riderName: string;
   weekKey: string;
@@ -23,4 +24,5 @@ export interface CustomCoachingMessage {
   customMessage: string;
   isCustom: boolean;
   updatedAt: string;
+  updatedBy?: string;
 }

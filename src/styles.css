@@ -478,6 +478,17 @@ input {
   gap: 10px;
 }
 
+.data-button-row {
+  grid-template-columns: 1fr;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
 .form-message,
 .preview-meta {
   font-size: 14px;
@@ -852,6 +863,10 @@ input {
 
   .mission-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .data-button-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .analysis-layout {
