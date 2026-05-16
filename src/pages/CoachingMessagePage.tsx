@@ -141,7 +141,7 @@ export function CoachingMessagePage() {
   if (!coaching) {
     return (
       <div className="page-stack">
-        <SectionHeader title="코칭 메시지" description="표시할 라이더 데이터가 없습니다. Excel 업로드 후 다시 확인해 주세요." />
+        <SectionHeader title="코칭 메시지" description="표시할 라이더 데이터가 없습니다. Excel 업로드를 다시 확인해 주세요." />
       </div>
     );
   }
@@ -152,7 +152,7 @@ export function CoachingMessagePage() {
 
       <section className={`panel ${payload.isFallbackWeek ? "notice-panel" : ""}`}>
         <h3>코칭 기준</h3>
-        <p>{payload.notice || `${payload.basisWeek} 기준으로 생성했습니다.`}</p>
+        <p>{payload.notice || `${payload.basisWeek} 기준으로 생성되었습니다.`}</p>
       </section>
 
       <section className="panel">
@@ -200,6 +200,10 @@ export function CoachingMessagePage() {
 
       <section className="panel coaching-card">
         <h3>관리자 내부 메모</h3>
+        <p className="note-text">
+          이 메모는 관리자 전용이며, 라이더에게 노출되는 코칭 메시지와 별도로 저장됩니다. 라이더 화면에는 표시되지
+          않습니다.
+        </p>
         <label className="field">
           <span>라이더별 메모</span>
           <textarea

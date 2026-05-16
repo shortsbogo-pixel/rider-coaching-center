@@ -13,6 +13,7 @@ export interface DataManagementSummary {
       completedTotal: number;
       issueCount: number;
       status: string;
+      analysisScope?: "active" | "archive_candidate";
     } & Pick<UploadHistory, "deletionCandidate">
   >;
   weekKeys: string[];
@@ -26,9 +27,17 @@ export interface DataManagementSummary {
   };
   cacheStatus: {
     riderProfileCacheUpdatedAt: string | null;
-    analysisCacheWeeks: Array<{ weekKey: string; generatedAt: string }>;
+    analysisCacheWeeks: Array<{
+      weekKey: string;
+      generatedAt: string;
+      status: "latest" | "regenerate_needed" | "missing" | "error";
+      sourceOrderCount: number;
+      analyzedRiderCount: number;
+      totalCompleted: number;
+    }>;
     deletionCandidates: string[];
   };
+  backupChecks: Array<{ key: string; status: "included" | "empty" | "missing"; count: number }>;
   settings: AppSettings;
 }
 

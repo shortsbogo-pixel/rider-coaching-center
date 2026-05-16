@@ -1,6 +1,5 @@
 import type { AuthUser, LoginCredentials, TestUser } from "../types/auth";
-
-const AUTH_STORAGE_KEY = "rider-coaching-auth";
+import { authSessionRepository } from "../storage/authSessionRepository";
 
 // MVP 테스트 계정입니다. 실제 배포 전에는 서버 인증, 안전한 비밀번호 저장, 세션 만료 정책으로 교체해야 합니다.
 export const testUsers: TestUser[] = [
@@ -20,14 +19,7 @@ export const testUsers: TestUser[] = [
 ];
 
 export function getStoredUser(): AuthUser | null {
-  const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as AuthUser;
-  } catch {
-    window.localStorage.removeItem(AUTH_STORAGE_KEY);
-    return null;
-  }
+  return authSessionRepository.get();
 }
 
 export function loginWithMockUser(credentials: LoginCredentials): AuthUser {
@@ -41,12 +33,12 @@ export function loginWithMockUser(credentials: LoginCredentials): AuthUser {
     displayName: found.displayName,
     riderId: found.riderId
   };
-  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+  authSessionRepository.save(user);
   return user;
 }
 
 export function clearStoredUser() {
-  window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  authSessionRepository.clear();
 }
 
 export function getAuthHeader(): Record<string, string> {

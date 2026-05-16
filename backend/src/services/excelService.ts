@@ -328,8 +328,12 @@ export async function getUploadedWeeks() {
   const candidates = await uploadRepository.markDeletionCandidates(8);
   const candidateWeeks = new Set(candidates.filter((item) => item.deletionCandidate).map((item) => item.weekKey));
   return parsedUploads
-    .map((upload) => ({ ...upload, deletionCandidate: candidateWeeks.has(upload.weekKey) }))
-    .sort((a, b) => a.week.localeCompare(b.week, "ko"));
+    .map((upload) => ({
+      ...upload,
+      deletionCandidate: candidateWeeks.has(upload.weekKey),
+      analysisScope: candidateWeeks.has(upload.weekKey) ? "archive_candidate" : "active"
+    }))
+    .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
 }
 
 export async function receiveUploadPreview(file: Express.Multer.File | undefined, week: string) {
