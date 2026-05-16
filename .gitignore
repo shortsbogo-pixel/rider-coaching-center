@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+*.log
+*.tsbuildinfo
+backend/src/data/uploads/*
+backend/src/data/parsed/*
+!backend/src/data/uploads/.gitkeep
+!backend/src/data/parsed/.gitkeep

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "rider-001",
+    "name": "김수환",
+    "baseName": "김수환",
+    "aliases": ["김수환", "김수환7172"],
+    "phoneSuffix": "7172"
+  },
+  {
+    "id": "rider-002",
+    "name": "박민재",
+    "baseName": "박민재",
+    "aliases": ["박민재", "박민재1845"],
+    "phoneSuffix": "1845"
+  },
+  {
+    "id": "rider-003",
+    "name": "이하늘",
+    "baseName": "이하늘",
+    "aliases": ["이하늘"],
+    "phoneSuffix": "0921"
+  },
+  {
+    "id": "rider-004",
+    "name": "정도윤",
+    "baseName": "정도윤",
+    "aliases": ["정도윤", "정도윤6401"],
+    "phoneSuffix": "6401"
+  }
+]
