@@ -1,5 +1,5 @@
-import { Database, Download, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertTriangle, Database, Download, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { MetricCard } from "../components/common/MetricCard";
 import { SectionHeader } from "../components/common/SectionHeader";
 import { dataManagementRepository, type DataManagementSummary } from "../storage/dataManagementRepository";
@@ -13,6 +13,13 @@ function formatDateTime(value?: string | null) {
 export function DataManagementPage() {
   const [summary, setSummary] = useState<DataManagementSummary | null>(null);
   const [message, setMessage] = useState("");
+
+  const retentionStatus = useMemo(() => {
+    if (!summary) return { overCount: 0, currentCount: 0, limit: 8 };
+    const limit = summary.settings.retentionWeeks;
+    const currentCount = summary.uploads.length;
+    return { overCount: Math.max(currentCount - limit, 0), currentCount, limit };
+  }, [summary]);
 
   async function loadSummary() {
     setSummary(await dataManagementRepository.getSummary());
@@ -54,9 +61,28 @@ export function DataManagementPage() {
         <MetricCard label="관리자 메모" value={`${summary.counts.adminNotes}건`} />
         <MetricCard label="저장 코칭" value={`${summary.counts.customCoachingMessages}건`} />
         <MetricCard label="분석 캐시" value={`${summary.counts.analysisCaches}개`} />
-        <MetricCard label="보관 정책" value={`${summary.settings.retentionWeeks}주차`} />
+        <MetricCard label="보관 정책" value={`${retentionStatus.currentCount}/${retentionStatus.limit}주차`} />
         <MetricCard label="삭제 후보" value={`${summary.cacheStatus.deletionCandidates.length}건`} tone={summary.cacheStatus.deletionCandidates.length ? "warning" : "default"} />
       </div>
+
+      <section className={`panel ${retentionStatus.overCount > 0 ? "notice-panel" : ""}`}>
+        <h3>8주 초과 관리</h3>
+        <p>
+          현재 업로드 주차는 {retentionStatus.currentCount}개이며 보관 기준은 {retentionStatus.limit}개입니다.
+          {retentionStatus.overCount > 0
+            ? ` 기준을 ${retentionStatus.overCount}개 초과했습니다. 아래 삭제 후보를 확인한 뒤 9차 이후 삭제/교체 기능에서 정리할 수 있습니다.`
+            : " 아직 보관 기준을 초과하지 않았습니다."}
+        </p>
+        {summary.cacheStatus.deletionCandidates.length ? (
+          <div className="tag-cloud warning-tags retention-tags">
+            {summary.cacheStatus.deletionCandidates.map((weekKey) => (
+              <span key={weekKey}>
+                <AlertTriangle size={13} /> 삭제 후보 · {weekKey}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </section>
 
       <section className="panel action-panel">
         <h3>백업/캐시 작업</h3>
@@ -84,7 +110,7 @@ export function DataManagementPage() {
         <h3>업로드 이력</h3>
         <div className="rider-list">
           {summary.uploads.map((upload) => (
-            <article className="list-card" key={upload.weekKey}>
+            <article className={`list-card ${upload.deletionCandidate ? "candidate-card" : ""}`} key={upload.weekKey}>
               <div>
                 <strong>{upload.weekKey}</strong>
                 <span>{upload.fileName}</span>
@@ -100,14 +126,18 @@ export function DataManagementPage() {
       </section>
 
       <section className="panel">
-        <h3>캐시 상태</h3>
+        <h3>분석 캐시 상태</h3>
         <div className="tag-cloud">
           <span>라이더 캐시: {formatDateTime(summary.cacheStatus.riderProfileCacheUpdatedAt)}</span>
-          {summary.cacheStatus.analysisCacheWeeks.map((cache) => (
-            <span key={cache.weekKey}>
-              <Database size={13} /> {cache.weekKey} · {formatDateTime(cache.generatedAt)}
-            </span>
-          ))}
+          {summary.cacheStatus.analysisCacheWeeks.length ? (
+            summary.cacheStatus.analysisCacheWeeks.map((cache) => (
+              <span key={cache.weekKey}>
+                <Database size={13} /> {cache.weekKey} · {formatDateTime(cache.generatedAt)}
+              </span>
+            ))
+          ) : (
+            <span>분석 캐시 없음</span>
+          )}
         </div>
       </section>
 

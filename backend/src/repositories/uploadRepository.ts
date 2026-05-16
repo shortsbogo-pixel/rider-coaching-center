@@ -10,7 +10,7 @@ export const uploadRepository = {
   },
   async markDeletionCandidates(limit = 8) {
     const uploads = (await repository.getAll()).sort((a, b) => a.uploadedAt.localeCompare(b.uploadedAt));
-    const overflow = Math.max(uploads.length - limit + 1, 0);
+    const overflow = Math.max(uploads.length - limit, 0);
     const candidateIds = new Set(uploads.slice(0, overflow).map((item) => item.id));
     return uploads.map((item) => ({ ...item, deletionCandidate: candidateIds.has(item.id) }));
   }

@@ -348,11 +348,6 @@ export async function saveUploadedExcel(file: Express.Multer.File | undefined, w
     await unlink(file.path).catch(() => undefined);
     throw new Error(`${week} 데이터가 이미 업로드되어 있습니다.`);
   }
-  if (uploads.length >= 8) {
-    await unlink(file.path).catch(() => undefined);
-    throw new Error("최대 8주차까지만 보관할 수 있습니다.");
-  }
-
   try {
     const fileName = decodeFileName(file.originalname);
     const preview = await parseWorkbook(file.path, week, fileName);
