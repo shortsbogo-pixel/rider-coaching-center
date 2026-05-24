@@ -7,3 +7,11 @@ backend/src/data/uploads/*
 backend/src/data/parsed/*
 !backend/src/data/uploads/.gitkeep
 !backend/src/data/parsed/.gitkeep
+node_modules/
+.env.local
+dist/
+build/
+*.xlsx
+*.xls
+*.csv
+uploads/
