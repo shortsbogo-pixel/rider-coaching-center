@@ -16,6 +16,25 @@ export async function getAnalysisOrders() {
   return parsedOrders.length ? parsedOrders : (orders as OrderRecord[]);
 }
 
+export interface RiderMetricsQuery {
+  weekKey?: string;
+}
+
+function normalizeWeekKey(weekKey?: string) {
+  const trimmed = weekKey?.trim();
+  return trimmed && trimmed !== "all" ? trimmed : "all";
+}
+
+function selectOrdersForWeek(orders: OrderRecord[], weekKey: string) {
+  return weekKey === "all" ? orders : orders.filter((order) => order.week === weekKey);
+}
+
+function cacheCoversOrders(cached: RiderMetrics[], orders: OrderRecord[]) {
+  const orderWeeks = new Set(orders.map((order) => order.week).filter(Boolean));
+  const cachedWeeks = new Set(cached.flatMap((metric) => Object.keys(metric.weeklyCompleted ?? {})));
+  return [...orderWeeks].every((week) => cachedWeeks.has(week));
+}
+
 function buildAnalysisCache(metrics: RiderMetrics[], weekKey: string): AnalysisCache {
   const totalCompleted = metrics.reduce((sum, metric) => sum + metric.totalCompleted, 0);
   const segmentSummary = Object.fromEntries(
@@ -49,13 +68,29 @@ function buildAnalysisCache(metrics: RiderMetrics[], weekKey: string): AnalysisC
   };
 }
 
-export async function getRiderMetrics() {
-  const cached = await riderRepository.getAll();
-  if (cached.length) return cached as RiderMetrics[];
+export async function getRiderMetrics(query: RiderMetricsQuery = {}) {
+  const weekKey = normalizeWeekKey(query.weekKey);
 
-  const metrics = buildRiderMetrics(await getAnalysisOrders(), riders as RiderProfile[]);
-  await riderRepository.replaceCache(metrics, "all");
-  await analysisRepository.save(buildAnalysisCache(metrics, "all"));
+  if (weekKey === "all") {
+    const allOrders = await getAnalysisOrders();
+    const cached = await riderRepository.getAll();
+    if (cached.length && cacheCoversOrders(cached as RiderMetrics[], allOrders)) return cached as RiderMetrics[];
+
+    const metrics = buildRiderMetrics(allOrders, riders as RiderProfile[]);
+    await analysisRepository.save(buildAnalysisCache(metrics, "all"));
+    await riderRepository.replaceCache(metrics, "all");
+    return metrics;
+  }
+
+  const allOrders = await getAnalysisOrders();
+  const targetOrders = selectOrdersForWeek(allOrders, weekKey);
+  const metrics = buildRiderMetrics(targetOrders, riders as RiderProfile[]);
+  await analysisRepository.save(buildAnalysisCache(metrics, weekKey));
+
+  if (weekKey === "all") {
+    await riderRepository.replaceCache(metrics, "all");
+  }
+
   return metrics;
 }
 
@@ -67,11 +102,12 @@ export async function getAnalysisCache(weekKey = "all") {
 
 export async function regenerateAnalysisCache(weekKey = "all") {
   const allOrders = await getAnalysisOrders();
-  const targetOrders = weekKey === "all" ? allOrders : allOrders.filter((order) => order.week === weekKey);
-  const metrics = buildRiderMetrics(targetOrders.length ? targetOrders : allOrders, riders as RiderProfile[]);
-  const cache = buildAnalysisCache(metrics, weekKey);
+  const normalizedWeekKey = normalizeWeekKey(weekKey);
+  const targetOrders = selectOrdersForWeek(allOrders, normalizedWeekKey);
+  const metrics = buildRiderMetrics(targetOrders, riders as RiderProfile[]);
+  const cache = buildAnalysisCache(metrics, normalizedWeekKey);
   await analysisRepository.save(cache);
-  if (weekKey === "all") {
+  if (normalizedWeekKey === "all") {
     await riderRepository.replaceCache(metrics, "all");
   }
   return cache;

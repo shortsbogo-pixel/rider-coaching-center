@@ -5,9 +5,9 @@ import riders from "../../../src/data/sampleRiders.json";
 import type { RiderProfile } from "../../../src/types/rider";
 import { getAnalysisOrders, getRiderMetrics } from "./analysisService";
 
-export async function getCoachingMessages() {
+export async function getCoachingMessages(weekKey?: string) {
   const orders = await getAnalysisOrders();
-  const selectedWeek = selectCoachingWeek(orders);
+  const selectedWeek = selectCoachingWeek(orders, weekKey);
   if (!selectedWeek) {
     const fallbackMetrics = await getRiderMetrics();
     return {

@@ -4,10 +4,13 @@ import riders from "../data/sampleRiders.json";
 import { MetricCard } from "../components/common/MetricCard";
 import { SectionHeader } from "../components/common/SectionHeader";
 import { RiskBadge } from "../components/admin/RiskBadge";
+import type { UploadedWeekSummary } from "../types/newWeekBriefing";
 import type { OrderRecord, TimeSegment } from "../types/order";
 import type { RiderGrade, RiderMetrics, RiderProfile } from "../types/rider";
 import { getAuthHeader } from "../utils/authStore";
+import { buildKeyChanges, buildLunchMissionBrief, getUploadHealth, getWeakestAction } from "../utils/newWeekBriefingAnalyzer";
 import { buildRiderMetrics, getGradeLabel } from "../utils/scoring";
+import { getLatestWeekKey, sortWeekKeys } from "../utils/weekSelector";
 
 const fallbackMetrics = buildRiderMetrics(orders as OrderRecord[], riders as RiderProfile[]);
 const segments: TimeSegment[] = ["Breakfast", "Lunch_Peak", "Post_Lunch", "Dinner_Peak", "Post_Dinner"];
@@ -24,14 +27,58 @@ function mergeWeeklyTotals(metrics: RiderMetrics[]) {
   ).filter(([, total]) => total > 0);
 }
 
+function formatDateTime(value?: string) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("ko-KR").format(value);
+}
+
 export function AdminDashboard() {
   const [metrics, setMetrics] = useState<RiderMetrics[]>(fallbackMetrics);
+  const [uploadedWeeks, setUploadedWeeks] = useState<UploadedWeekSummary[]>([]);
+  const [latestMetrics, setLatestMetrics] = useState<RiderMetrics[]>([]);
+  const [previousMetrics, setPreviousMetrics] = useState<RiderMetrics[]>([]);
 
   useEffect(() => {
     fetch("/api/riders", { headers: getAuthHeader() })
       .then((response) => response.json())
       .then((data) => setMetrics(data as RiderMetrics[]))
       .catch(() => setMetrics(fallbackMetrics));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/uploads")
+      .then((response) => response.json())
+      .then(async (data) => {
+        const uploads = ((data.weeks ?? []) as UploadedWeekSummary[]).map((item) => ({
+          ...item,
+          week: item.weekKey ?? item.week
+        }));
+        setUploadedWeeks(uploads);
+
+        const sortedWeeks = sortWeekKeys(uploads.map((item) => item.week));
+        const latestWeek = sortedWeeks[0];
+        const previousWeek = sortedWeeks[1];
+
+        if (!latestWeek) return;
+
+        const [latestResponse, previousResponse] = await Promise.all([
+          fetch(`/api/riders?weekKey=${encodeURIComponent(latestWeek)}`, { headers: getAuthHeader() }),
+          previousWeek
+            ? fetch(`/api/riders?weekKey=${encodeURIComponent(previousWeek)}`, { headers: getAuthHeader() })
+            : Promise.resolve(undefined)
+        ]);
+        setLatestMetrics((await latestResponse.json()) as RiderMetrics[]);
+        setPreviousMetrics(previousResponse ? ((await previousResponse.json()) as RiderMetrics[]) : []);
+      })
+      .catch(() => {
+        setUploadedWeeks([]);
+        setLatestMetrics([]);
+        setPreviousMetrics([]);
+      });
   }, []);
 
   const totalCompleted = metrics.reduce((sum, metric) => sum + metric.totalCompleted, 0);
@@ -62,10 +109,83 @@ export function AdminDashboard() {
   const gradeCounts = Object.fromEntries(
     gradeOrder.map((grade) => [grade, metrics.filter((metric) => metric.riderGrade === grade).length])
   ) as Record<RiderGrade, number>;
+  const latestWeekKey = getLatestWeekKey(uploadedWeeks.map((item) => item.week));
+  const latestUpload = uploadedWeeks.find((upload) => upload.week === latestWeekKey);
+  const uploadHealth = getUploadHealth(latestUpload);
+  const latestCompleted = latestMetrics.reduce((sum, metric) => sum + metric.totalCompleted, 0);
+  const latestAutoTargetCount = latestMetrics.filter((metric) => metric.validationStatus === "AUTO_ANALYSIS_TARGET").length;
+  const keyChanges = buildKeyChanges(latestMetrics, previousMetrics);
+  const actionRequired = getWeakestAction(latestMetrics);
+  const lunchMission = buildLunchMissionBrief(latestMetrics);
 
   return (
     <div className="page-stack">
       <SectionHeader title="관리자 대시보드" description="캔버스 기획 기준을 반영해 실제 운행 라이더 등급과 취약 구간을 요약합니다." />
+
+      {latestUpload ? (
+        <section className="panel briefing-panel">
+          <div className="analysis-title">
+            <div>
+              <h3>신규 주차 운영 브리핑</h3>
+              <p>{latestUpload.week} 데이터가 업로드되었습니다. 먼저 검수 상태와 조치 우선순위를 확인하세요.</p>
+            </div>
+            <span className={`status-pill ${uploadHealth.tone}`}>{uploadHealth.label}</span>
+          </div>
+
+          <div className="briefing-grid">
+            <article className="briefing-card">
+              <span>업로드 주차</span>
+              <strong>{latestUpload.week}</strong>
+              <small>{formatDateTime(latestUpload.uploadedAt)}</small>
+            </article>
+            <article className="briefing-card">
+              <span>정상 분석</span>
+              <strong>{latestUpload.completedTotal ?? latestCompleted}건</strong>
+              <small>오류/확인 {latestUpload.issueCount}건</small>
+            </article>
+            <article className="briefing-card">
+              <span>신규 자동 분석 대상</span>
+              <strong>{latestAutoTargetCount}명</strong>
+              <small>최신 주차 기준</small>
+            </article>
+          </div>
+
+          <div className="briefing-section">
+            <h4>이번 주 핵심 변화</h4>
+            <div className="briefing-grid">
+              {keyChanges.map((item) => (
+                <article className={`briefing-card ${item.tone}`} key={item.label}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <div className="briefing-split">
+            {actionRequired ? (
+              <article className="briefing-card warning">
+                <span>즉시 조치 필요</span>
+                <strong>{actionRequired.segment}</strong>
+                <small>{actionRequired.reason}</small>
+                <p>{actionRequired.recommendation}</p>
+              </article>
+            ) : null}
+            <article className="briefing-card">
+              <span>런치 미션 후보</span>
+              <strong>{lunchMission.tenPlusCount}명</strong>
+              <small>14건 이상 {lunchMission.fourteenPlusCount}명 · 예상 {formatCurrency(lunchMission.estimatedBudget)}원</small>
+              <p>{lunchMission.recommendation}</p>
+            </article>
+          </div>
+
+          <div className="button-row data-button-row">
+            <a className="secondary-link-button" href="/validation">데이터 검수</a>
+            <a className="secondary-link-button" href="/missions">미션 확인</a>
+            <a className="secondary-link-button" href={`/coaching?weekKey=${encodeURIComponent(latestUpload.week)}`}>코칭 생성</a>
+          </div>
+        </section>
+      ) : null}
 
       <div className="metric-grid">
         <MetricCard label="전체 운행 라이더" value={`${activeRiderCount}명`} caption="완료 기록 기준" />

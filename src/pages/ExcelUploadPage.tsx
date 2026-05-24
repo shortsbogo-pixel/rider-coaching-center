@@ -4,8 +4,6 @@ import { SectionHeader } from "../components/common/SectionHeader";
 import { requiredOrderColumns } from "../utils/excelParser";
 import type { OrderRecord } from "../types/order";
 
-const weeks = ["4월2주차", "4월3주차", "4월4주차", "5월1주차", "5월2주차"];
-
 interface UploadedWeek {
   week: string;
   fileName: string;
@@ -23,8 +21,36 @@ interface UploadPreview {
   issues: Array<{ rowNumber: number; message: string }>;
 }
 
+function parseWeekLabel(week: string) {
+  const month = Number(week.match(/(\d+)\s*월/)?.[1] ?? 0);
+  const weekNo = Number(week.match(/(\d+)\s*주차/)?.[1] ?? 0);
+  return month && weekNo ? { month, weekNo } : null;
+}
+
+function getWeekSortValue(week: string) {
+  const parsed = parseWeekLabel(week);
+  return parsed ? parsed.month * 10 + parsed.weekNo : 0;
+}
+
+function getNextWeekLabel(uploadedWeeks: UploadedWeek[]) {
+  const latest = [...uploadedWeeks]
+    .map((item) => parseWeekLabel(item.week))
+    .filter((item): item is { month: number; weekNo: number } => Boolean(item))
+    .sort((a, b) => b.month * 10 + b.weekNo - (a.month * 10 + a.weekNo))[0];
+
+  if (!latest) return "";
+  const nextMonth = latest.weekNo >= 4 ? latest.month + 1 : latest.month;
+  const nextWeekNo = latest.weekNo >= 4 ? 1 : latest.weekNo + 1;
+  return `${nextMonth}월${nextWeekNo}주차`;
+}
+
+function buildWeekOptions(uploadedWeeks: UploadedWeek[]) {
+  const nextWeek = getNextWeekLabel(uploadedWeeks);
+  return [...new Set([nextWeek, ...uploadedWeeks.map((item) => item.week)])].filter(Boolean);
+}
+
 export function ExcelUploadPage() {
-  const [selectedWeek, setSelectedWeek] = useState(weeks[4]);
+  const [selectedWeek, setSelectedWeek] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploadedWeeks, setUploadedWeeks] = useState<UploadedWeek[]>([]);
   const [preview, setPreview] = useState<UploadPreview | null>(null);
@@ -35,6 +61,7 @@ export function ExcelUploadPage() {
     const response = await fetch("/api/uploads");
     const data = (await response.json()) as { weeks: UploadedWeek[] };
     setUploadedWeeks(data.weeks);
+    setSelectedWeek((current) => current || getNextWeekLabel(data.weeks) || data.weeks[0]?.week || "");
   }
 
   useEffect(() => {
@@ -42,6 +69,12 @@ export function ExcelUploadPage() {
   }, []);
 
   async function submitUpload(mode: "preview" | "save") {
+    const weekKey = selectedWeek.trim();
+    if (!weekKey) {
+      setMessage("업로드할 주차를 입력하세요.");
+      return;
+    }
+
     if (!file) {
       setMessage("엑셀 파일을 먼저 선택하세요.");
       return;
@@ -51,7 +84,7 @@ export function ExcelUploadPage() {
     setMessage("");
 
     const formData = new FormData();
-    formData.append("week", selectedWeek);
+    formData.append("week", weekKey);
     formData.append("file", file);
 
     try {
@@ -68,7 +101,7 @@ export function ExcelUploadPage() {
       } else {
         setPreview(null);
         setFile(null);
-        setMessage(`${selectedWeek} 데이터가 저장되었습니다.`);
+        setMessage(`${weekKey} 데이터가 저장되었습니다.`);
         await loadUploadedWeeks();
       }
     } catch (error) {
@@ -79,6 +112,8 @@ export function ExcelUploadPage() {
   }
 
   const uploadedWeekNames = uploadedWeeks.map((item) => item.week);
+  const weekOptions = buildWeekOptions(uploadedWeeks);
+  const sortedUploadedWeeks = [...uploadedWeeks].sort((a, b) => getWeekSortValue(b.week) - getWeekSortValue(a.week));
 
   return (
     <div className="page-stack">
@@ -86,12 +121,18 @@ export function ExcelUploadPage() {
 
       <section className="panel upload-panel">
         <label className="field">
-          <span>주차 선택</span>
-          <select value={selectedWeek} onChange={(event) => setSelectedWeek(event.target.value)}>
-            {weeks.map((week) => (
-              <option key={week}>{week}</option>
+          <span>주차 선택/입력</span>
+          <input
+            list="week-options"
+            value={selectedWeek}
+            onChange={(event) => setSelectedWeek(event.target.value)}
+            placeholder="예: 5월3주차"
+          />
+          <datalist id="week-options">
+            {weekOptions.map((week) => (
+              <option key={week} value={week} />
             ))}
-          </select>
+          </datalist>
         </label>
 
         <label className="dropzone">
@@ -169,13 +210,13 @@ export function ExcelUploadPage() {
       <section className="panel">
         <h3>업로드된 주차</h3>
         <div className="week-grid">
-          {weeks.map((week) => {
+          {sortedUploadedWeeks.map((item) => {
+            const week = item.week;
             const uploaded = uploadedWeekNames.includes(week);
-            const detail = uploadedWeeks.find((item) => item.week === week);
             return (
                 <div className={`week-card ${uploaded ? "uploaded" : ""}`} key={week}>
                   <strong>{week}</strong>
-                  <span>{uploaded ? `완료 ${detail?.completedTotal ?? detail?.orderCount ?? 0}건` : "대기"}</span>
+                  <span>{uploaded ? `완료 ${item.completedTotal ?? item.orderCount ?? 0}건` : "대기"}</span>
                 </div>
             );
           })}

@@ -10,12 +10,18 @@ import {
   resetCustomCoachingMessage,
   saveCustomCoachingMessage
 } from "../utils/coachingMessageStore";
+import { getLatestWeekKey, sortWeekKeys } from "../utils/weekSelector";
 
 interface CoachingPayload {
   basisWeek: string;
   isFallbackWeek: boolean;
   notice: string;
   messages: CoachingMessage[];
+}
+
+interface UploadedWeek {
+  week: string;
+  weekKey?: string;
 }
 
 const emptyPayload: CoachingPayload = {
@@ -51,6 +57,8 @@ function formatDateTime(value?: string) {
 
 export function CoachingMessagePage() {
   const [payload, setPayload] = useState<CoachingPayload>(emptyPayload);
+  const [uploadedWeeks, setUploadedWeeks] = useState<UploadedWeek[]>([]);
+  const [activeWeekKey, setActiveWeekKey] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [notes, setNotes] = useState<AdminNote[]>([]);
   const [customMessages, setCustomMessages] = useState<CustomCoachingMessage[]>([]);
@@ -58,18 +66,47 @@ export function CoachingMessagePage() {
   const [customMessage, setCustomMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
 
-  useEffect(() => {
-    fetch("/api/coaching", { headers: getAuthHeader() })
+  async function loadCoaching(weekKey?: string) {
+    const query = weekKey ? `?weekKey=${encodeURIComponent(weekKey)}` : "";
+    return fetch(`/api/coaching${query}`, { headers: getAuthHeader() })
       .then((response) => response.json())
       .then((data) => {
         const next = Array.isArray(data)
           ? { basisWeek: "", isFallbackWeek: false, notice: "", messages: data as CoachingMessage[] }
           : (data as CoachingPayload);
         setPayload(next);
-        setSelectedId(next.messages[0]?.riderId ?? "");
+        setActiveWeekKey((current) => current || next.basisWeek);
+        setSelectedId((current) =>
+          next.messages.some((message) => message.riderId === current) ? current : next.messages[0]?.riderId ?? ""
+        );
+      });
+  }
+
+  useEffect(() => {
+    fetch("/api/uploads")
+      .then((response) => response.json())
+      .then((data) => {
+        const weeks = ((data.weeks ?? []) as UploadedWeek[]).map((item) => ({
+          ...item,
+          week: item.weekKey ?? item.week
+        }));
+        setUploadedWeeks(weeks);
+        const latestWeek = getLatestWeekKey(weeks.map((item) => item.week));
+        if (latestWeek) {
+          setActiveWeekKey((current) => current || latestWeek);
+          return;
+        }
+        return loadCoaching();
       })
-      .catch(() => setStatusMessage("코칭 데이터를 불러오지 못했습니다. backend 서버 상태를 확인해 주세요."));
+      .catch(() => {
+        void loadCoaching().catch(() => setStatusMessage("코칭 데이터를 불러오지 못했습니다. backend 서버 상태를 확인해 주세요."));
+      });
   }, []);
+
+  useEffect(() => {
+    if (!activeWeekKey) return;
+    loadCoaching(activeWeekKey).catch(() => setStatusMessage("코칭 데이터를 불러오지 못했습니다. backend 서버 상태를 확인해 주세요."));
+  }, [activeWeekKey]);
 
   useEffect(() => {
     if (!payload.basisWeek) return;
@@ -90,6 +127,7 @@ export function CoachingMessagePage() {
     (message) => message.riderId === coaching?.riderId && message.weekKey === payload.basisWeek
   );
   const autoMessage = coaching ? formatAutoMessage(coaching) : "";
+  const weekOptions = sortWeekKeys(uploadedWeeks.map((item) => item.week));
 
   useEffect(() => {
     setAdminMemo(savedNote?.note ?? "");
@@ -156,6 +194,16 @@ export function CoachingMessagePage() {
       </section>
 
       <section className="panel">
+        <label className="field">
+          <span>기준 주차</span>
+          <select value={activeWeekKey || payload.basisWeek} onChange={(event) => setActiveWeekKey(event.target.value)}>
+            {weekOptions.map((week) => (
+              <option key={week} value={week}>
+                {week}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="field">
           <span>라이더 선택</span>
           <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>

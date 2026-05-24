@@ -338,8 +338,10 @@ export async function getUploadedWeeks() {
 
 export async function receiveUploadPreview(file: Express.Multer.File | undefined, week: string) {
   if (!file) throw new Error("엑셀 파일이 필요합니다.");
+  const normalizedWeek = week.trim();
+  if (!normalizedWeek) throw new Error("weekKey is required.");
   try {
-    return await parseWorkbook(file.path, week, decodeFileName(file.originalname));
+    return await parseWorkbook(file.path, normalizedWeek, decodeFileName(file.originalname));
   } finally {
     await unlink(file.path).catch(() => undefined);
   }
@@ -347,14 +349,19 @@ export async function receiveUploadPreview(file: Express.Multer.File | undefined
 
 export async function saveUploadedExcel(file: Express.Multer.File | undefined, week: string) {
   if (!file) throw new Error("엑셀 파일이 필요합니다.");
-  const uploads = await getUploadedWeeks();
-  if (uploads.some((upload) => upload.week === week)) {
+  const normalizedWeek = week.trim();
+  if (!normalizedWeek) {
     await unlink(file.path).catch(() => undefined);
-    throw new Error(`${week} 데이터가 이미 업로드되어 있습니다.`);
+    throw new Error("weekKey is required.");
+  }
+  const uploads = await getUploadedWeeks();
+  if (uploads.some((upload) => upload.week === normalizedWeek || upload.weekKey === normalizedWeek)) {
+    await unlink(file.path).catch(() => undefined);
+    throw new Error(`${normalizedWeek} 데이터가 이미 업로드되어 있습니다.`);
   }
   try {
     const fileName = decodeFileName(file.originalname);
-    const preview = await parseWorkbook(file.path, week, fileName);
+    const preview = await parseWorkbook(file.path, normalizedWeek, fileName);
     if (preview.missingColumns.length) {
       throw new Error(`필수 컬럼 누락: ${preview.missingColumns.join(", ")}`);
     }
@@ -367,7 +374,7 @@ export async function saveUploadedExcel(file: Express.Multer.File | undefined, w
       .filter((order): order is OrderRecord => Boolean(order));
 
     const parsed: ParsedUpload = {
-      week,
+      week: normalizedWeek,
       fileName,
       uploadedAt: new Date().toISOString(),
       sheetName: preview.sheetName,
@@ -377,10 +384,10 @@ export async function saveUploadedExcel(file: Express.Multer.File | undefined, w
       issues
     };
 
-    await writeFile(parsedPathForWeek(week), JSON.stringify(parsed, null, 2), "utf-8");
+    await writeFile(parsedPathForWeek(normalizedWeek), JSON.stringify(parsed, null, 2), "utf-8");
     await uploadRepository.save({
-      id: week,
-      weekKey: week,
+      id: normalizedWeek,
+      weekKey: normalizedWeek,
       fileName,
       uploadedAt: parsed.uploadedAt,
       uploadedBy: "admin",
@@ -391,7 +398,8 @@ export async function saveUploadedExcel(file: Express.Multer.File | undefined, w
       status: "parsed",
       fileSignature: `${fileName}:${orders.length}:${parsed.uploadedAt}`
     });
-    await analysisRepository.invalidateWeek(week);
+    await analysisRepository.invalidateWeek(normalizedWeek);
+    await analysisRepository.invalidateWeek("all");
     await riderRepository.clear();
     return parsed;
   } finally {
@@ -431,7 +439,7 @@ export async function getValidationSummary() {
       )
       .reduce<Record<string, { week: string; riderName: string; baseName: string; completedTotal: number; rowCount: number }>>(
         (acc, item) => {
-          const key = item.baseName || item.riderName;
+          const key = `${item.week}::${item.baseName || item.riderName}`;
           const current = acc[key] ?? {
             week: item.week,
             riderName: item.riderName,
@@ -450,7 +458,7 @@ export async function getValidationSummary() {
     .map((candidate) => ({
       ...candidate,
       status: candidate.rowCount > candidate.completedTotal ? "NAME_REVIEW_RECOMMENDED" : "AUTO_ANALYSIS_TARGET",
-      description: "업로드 데이터에서 발견되어 자동으로 분석에 포함됨"
+      description: "업로드 데이터에서 발견되어 자동 분석에 포함됩니다."
     }))
     .sort((a, b) => b.completedTotal - a.completedTotal);
 

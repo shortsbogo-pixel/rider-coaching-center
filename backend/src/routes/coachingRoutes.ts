@@ -3,13 +3,18 @@ import { getCoachingMessages } from "../services/coachingService";
 
 const router = Router();
 
+function getRequestedWeekKey(raw: unknown) {
+  const weekKey = typeof raw === "string" ? raw.trim() : "";
+  return weekKey || undefined;
+}
+
 router.get("/", async (_req, res, next) => {
   try {
     if (_req.header("x-user-role") !== "admin" && _req.header("x-user-role") !== "rider") {
       res.status(401).json({ message: "로그인이 필요합니다." });
       return;
     }
-    const payload = await getCoachingMessages();
+    const payload = await getCoachingMessages(getRequestedWeekKey(_req.query.weekKey));
     if (_req.header("x-user-role") === "rider") {
       const riderId = decodeURIComponent(_req.header("x-rider-id") || "");
       res.json({ ...payload, messages: payload.messages.filter((message) => message.riderId === riderId) });
@@ -23,7 +28,7 @@ router.get("/", async (_req, res, next) => {
 
 router.get("/:id", async (req, res, next) => {
   try {
-    const payload = await getCoachingMessages();
+    const payload = await getCoachingMessages(getRequestedWeekKey(req.query.weekKey));
     const coaching = payload.messages.find((item) => item.riderId === req.params.id);
     if (!coaching) {
       res.status(404).json({ message: "Coaching message not found" });

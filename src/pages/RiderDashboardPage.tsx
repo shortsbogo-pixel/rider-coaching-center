@@ -13,10 +13,20 @@ import { generateCoachingMessage } from "../utils/coachingGenerator";
 import { getAuthHeader } from "../utils/authStore";
 import { fetchCustomCoachingMessage, fetchCustomCoachingMessages } from "../utils/coachingMessageStore";
 import { buildRiderMetrics, getGradeLabel } from "../utils/scoring";
+import { getLatestWeekKey, sortWeekKeys } from "../utils/weekSelector";
 
 const fallbackMetrics = buildRiderMetrics(orders as OrderRecord[], riders as RiderProfile[]);
 const segments: TimeSegment[] = ["Breakfast", "Lunch_Peak", "Post_Lunch", "Dinner_Peak", "Post_Dinner"];
 const deliveryTypes: DeliveryType[] = ["단건배달", "멀티배달1", "멀티배달2", "멀티배달3", "멀티배달4"];
+
+interface UploadedWeek {
+  week: string;
+  weekKey?: string;
+}
+
+function buildWeekQuery(weekKey?: string) {
+  return weekKey ? `?weekKey=${encodeURIComponent(weekKey)}` : "";
+}
 
 function getMissionHint(metrics: RiderMetrics) {
   if (metrics.postLunchRate < 0.15) return "Post_Lunch 14:00~16:30 구간에서 2~3콜을 추가 목표로 잡아보세요.";
@@ -53,6 +63,8 @@ export function RiderDashboardPage() {
   const queryRiderId = searchParams.get("riderId");
   const queryRiderName = searchParams.get("riderName");
   const queryWeekKey = searchParams.get("weekKey");
+  const [uploadedWeeks, setUploadedWeeks] = useState<UploadedWeek[]>([]);
+  const [activeWeekKey, setActiveWeekKey] = useState("");
   const [metricsList, setMetricsList] = useState<RiderMetrics[]>(fallbackMetrics);
   const [selectedId, setSelectedId] = useState(user?.role === "rider" ? user.riderId ?? "" : fallbackMetrics[0]?.riderId ?? "");
   const [customMessages, setCustomMessages] = useState<CustomCoachingMessage[]>([]);
@@ -65,13 +77,47 @@ export function RiderDashboardPage() {
       (!queryRiderId && queryRiderName && queryRiderName.trim() !== user.displayName));
 
   useEffect(() => {
-    const riderUrl = user?.role === "rider" && user.riderId ? `/api/riders/${encodeURIComponent(user.riderId)}` : "/api/riders";
+    let ignore = false;
+
+    fetch("/api/uploads")
+      .then((response) => response.json())
+      .then((data) => {
+        if (ignore) return;
+        const weeks = ((data.weeks ?? []) as UploadedWeek[])
+          .map((item) => ({
+            ...item,
+            week: item.weekKey ?? item.week
+          }))
+          .filter((item) => item.week);
+        const weekKeys = weeks.map((item) => item.week);
+        const requestedWeek = queryWeekKey && weekKeys.includes(queryWeekKey) ? queryWeekKey : "";
+        const nextWeek = requestedWeek || getLatestWeekKey(weekKeys);
+        setUploadedWeeks(weeks);
+        if (nextWeek) {
+          setActiveWeekKey(nextWeek);
+        }
+      })
+      .catch(() => {
+        if (queryWeekKey) setActiveWeekKey(queryWeekKey);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [queryWeekKey]);
+
+  useEffect(() => {
+    if (!activeWeekKey) return;
+    const weekQuery = buildWeekQuery(activeWeekKey);
+    const riderUrl =
+      user?.role === "rider" && user.riderId ? `/api/riders/${encodeURIComponent(user.riderId)}${weekQuery}` : `/api/riders${weekQuery}`;
     fetch(riderUrl, { headers: getAuthHeader() })
       .then((response) => response.json())
       .then((data) => {
         const next = Array.isArray(data) ? (data as RiderMetrics[]) : ([data] as RiderMetrics[]);
-        const resolved = next.length ? next : fallbackMetrics;
+        const resolved = next.filter((item) => item?.riderId);
         setMetricsList(resolved);
+        setLinkMessage("");
 
         if (user?.role === "rider") {
           setSelectedId(user.riderId ?? "");
@@ -88,17 +134,21 @@ export function RiderDashboardPage() {
         if (queryRiderId || queryRiderName) {
           setLinkMessage("URL 파라미터와 일치하는 라이더를 찾지 못했습니다. 드롭다운에서 직접 선택해 주세요.");
         }
-        setSelectedId(resolved[0]?.riderId ?? "");
+        setSelectedId((current) => (resolved.some((item) => item.riderId === current) ? current : resolved[0]?.riderId ?? ""));
       })
       .catch(() => setMetricsList(fallbackMetrics));
-  }, [queryRiderId, queryRiderName, user]);
+  }, [activeWeekKey, queryRiderId, queryRiderName, user]);
 
   useEffect(() => {
-    fetch("/api/coaching", { headers: getAuthHeader() })
+    if (!activeWeekKey) return;
+    fetch(`/api/coaching${buildWeekQuery(activeWeekKey)}`, { headers: getAuthHeader() })
       .then((response) => response.json())
       .then(async (data) => {
-        const week = queryWeekKey || data?.basisWeek || "";
+        const week = data?.basisWeek || activeWeekKey;
         setBasisWeek(week);
+        if (week && week !== activeWeekKey) {
+          setActiveWeekKey(week);
+        }
         if (user?.role === "rider" && user.riderId) {
           const message = await fetchCustomCoachingMessage(user.riderId, week);
           return message ? [message] : [];
@@ -107,7 +157,7 @@ export function RiderDashboardPage() {
       })
       .then(setCustomMessages)
       .catch(() => setCustomMessages([]));
-  }, [queryWeekKey, user]);
+  }, [activeWeekKey, user]);
 
   if (riderQueryMismatch) {
     return <Navigate to="/rider" replace />;
@@ -118,6 +168,10 @@ export function RiderDashboardPage() {
   const savedCustom = customMessages.find(
     (message) => message.riderId === metrics?.riderId && (!basisWeek || message.weekKey === basisWeek) && message.isCustom
   );
+  const weekOptions = sortWeekKeys(uploadedWeeks.map((item) => item.week));
+  const selectedWeekKey = activeWeekKey || basisWeek;
+  const visibleWeekOptions =
+    selectedWeekKey && !weekOptions.includes(selectedWeekKey) ? [selectedWeekKey, ...weekOptions] : weekOptions;
 
   if (!metrics || !coaching) {
     return (
@@ -145,12 +199,27 @@ export function RiderDashboardPage() {
             ? "관리자는 정산관리 앱 링크의 riderId 또는 riderName 파라미터로 특정 라이더 화면을 바로 미리볼 수 있습니다."
             : "다른 라이더 데이터와 관리자 내부 메모는 표시되지 않습니다."}
         </p>
-        {basisWeek ? <p className="note-text">코칭 메시지 기준 주차: {basisWeek}</p> : null}
+        {selectedWeekKey ? <p className="note-text">코칭 메시지 기준 주차: {selectedWeekKey}</p> : null}
         {linkMessage ? <p className="note-text">{linkMessage}</p> : null}
       </section>
 
-      {isAdminPreview ? (
-        <section className="panel sticky-selector">
+      <section className="panel sticky-selector rider-selector-panel">
+        <label className="field">
+          <span>기준 주차</span>
+          <select value={selectedWeekKey} onChange={(event) => setActiveWeekKey(event.target.value)} disabled={!visibleWeekOptions.length}>
+            {visibleWeekOptions.length ? (
+              visibleWeekOptions.map((week) => (
+                <option key={week} value={week}>
+                  {week}
+                </option>
+              ))
+            ) : (
+              <option value="">업로드 주차 없음</option>
+            )}
+          </select>
+        </label>
+
+        {isAdminPreview ? (
           <label className="field">
             <span>라이더 선택</span>
             <select value={metrics.riderId} onChange={(event) => setSelectedId(event.target.value)}>
@@ -161,15 +230,15 @@ export function RiderDashboardPage() {
               ))}
             </select>
           </label>
-        </section>
-      ) : null}
+        ) : null}
+      </section>
 
       <section className="hero-card">
         <div>
           <p>내 배차 친화 점수</p>
           <h2>{metrics.displayName}</h2>
           <span>
-            {getGradeLabel(metrics.riderGrade)} · {coaching.riskLevel} · 최근 데이터 {metrics.totalCompleted}건
+            {getGradeLabel(metrics.riderGrade)} · {coaching.riskLevel} · {selectedWeekKey || "최근 데이터"} {metrics.totalCompleted}건
           </span>
         </div>
         <ScoreRing score={metrics.dispatchScore} />
