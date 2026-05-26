@@ -50,6 +50,7 @@ import {
   readWeeklyAIBriefingEntries,
   saveWeeklyAIBriefingEntry
 } from "../utils/weeklyBriefingHistory";
+import { formatKakaoRiderMessage } from "../utils/riderMessageFormatter";
 import { getLatestWeekKey, sortWeekKeys } from "../utils/weekSelector";
 
 const fallbackMetrics = buildRiderMetrics(orders as OrderRecord[], riders as RiderProfile[]);
@@ -96,6 +97,9 @@ interface AICoachingResultState {
 interface AICopyStatusState {
   adminCopied?: boolean;
   riderCopied?: boolean;
+  kakaoCopied?: boolean;
+  kakaoCopyFailed?: boolean;
+  kakaoManualText?: string;
 }
 
 type AdminTopicId = "briefing" | "operation" | "analysis" | "riders";
@@ -538,12 +542,17 @@ export function AdminDashboard() {
   const [riderSortOption, setRiderSortOption] = useState<AdminRiderSortOption>("risk-first");
   const [localAICoachingHistory, setLocalAICoachingHistory] = useState<LocalAICoachingHistoryEntry[]>(() => readAICoachingHistoryEntries());
   const [localWeeklyBriefingHistory, setLocalWeeklyBriefingHistory] = useState<LocalWeeklyAIBriefingEntry[]>(() => readWeeklyAIBriefingEntries());
+  const [localMonthlyReportHistory, setLocalMonthlyReportHistory] = useState<LocalMonthlyReportEntry[]>(() => readMonthlyReportEntries());
   const [weeklyBriefingLoading, setWeeklyBriefingLoading] = useState(false);
   const [weeklyBriefingError, setWeeklyBriefingError] = useState("");
   const [weeklyBriefingCopyStatus, setWeeklyBriefingCopyStatus] = useState("");
   const [managerActionRevision, setManagerActionRevision] = useState(0);
   const [operationMemo, setOperationMemo] = useState("");
+  const [monthlyReportLoading, setMonthlyReportLoading] = useState(false);
+  const [monthlyReportError, setMonthlyReportError] = useState("");
   const [monthlyReportCopyStatus, setMonthlyReportCopyStatus] = useState("");
+  const [monthlyReportCopyFailed, setMonthlyReportCopyFailed] = useState(false);
+  const [monthlyReportManualText, setMonthlyReportManualText] = useState("");
 
   useEffect(() => {
     fetch("/api/uploads")
@@ -736,7 +745,7 @@ export function AdminDashboard() {
     .filter((entry) => entry.weekKey.trim() === selectedWeekKey.trim())
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const latestWeeklyAIBriefing = weeklyAIBriefingHistory[0];
-  const monthlyOperationReport = buildMonthlyOperationReport({
+  const monthlyOperationReportSummary = buildMonthlyOperationReportSummary({
     monthKey: getCurrentMonthKey(),
     coachingHistory: localAICoachingHistory,
     actionRecords: managerActionRecords,
@@ -748,6 +757,10 @@ export function AdminDashboard() {
     })),
     operationMemo
   });
+  const monthlyReportHistory = localMonthlyReportHistory
+    .filter((entry) => entry.monthKey.trim() === monthlyOperationReportSummary.monthKey)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const monthlyOperationReport = monthlyReportHistory[0];
 
   const [aiLoadingById, setAiLoadingById] = useState<Record<string, boolean>>({});
   const [aiResultById, setAiResultById] = useState<Record<string, AICoachingResultState>>({});
@@ -798,6 +811,10 @@ export function AdminDashboard() {
     setLocalWeeklyBriefingHistory(readWeeklyAIBriefingEntries());
   }
 
+  function refreshLocalMonthlyReportHistory() {
+    setLocalMonthlyReportHistory(readMonthlyReportEntries());
+  }
+
   function buildCurrentWeeklyAIBriefingSummary(coachingHistory = localAICoachingHistory) {
     return buildWeeklyBriefingSummary({
       weekKey: selectedWeekKey,
@@ -810,6 +827,21 @@ export function AdminDashboard() {
       })),
       actionRecords: readManagerActionChecklistRecords(),
       coachingHistory
+    });
+  }
+
+  function buildCurrentMonthlyOperationReportSummary(coachingHistory = localAICoachingHistory) {
+    return buildMonthlyOperationReportSummary({
+      monthKey: getCurrentMonthKey(),
+      coachingHistory,
+      actionRecords: readManagerActionChecklistRecords(),
+      riders: riderComparisonsBase.map(({ metric, changeRate }) => ({
+        riderName: metric.displayName,
+        riskLevel: metric.riskLevel,
+        currentWeekCompleted: metric.totalCompleted,
+        changeRate
+      })),
+      operationMemo
     });
   }
 
@@ -844,6 +876,37 @@ export function AdminDashboard() {
     } else {
       setLocalWeeklyBriefingHistory((current) => [entry, ...current]);
       setWeeklyBriefingError("브리핑은 화면에 표시되지만 브라우저 저장소에는 저장하지 못했습니다.");
+    }
+    return entry;
+  }
+
+  function normalizeMonthlyOperationReport(data: unknown, fallback: MonthlyOperationReport): MonthlyOperationReport {
+    const result = data as Partial<MonthlyOperationReport>;
+    const actions = Array.isArray(result.nextMonthActions)
+      ? result.nextMonthActions.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 3)
+      : fallback.nextMonthActions;
+
+    return {
+      ...fallback,
+      operationSummary:
+        typeof result.operationSummary === "string" && result.operationSummary.trim()
+          ? result.operationSummary
+          : fallback.operationSummary,
+      nextMonthActions: actions.length ? actions : fallback.nextMonthActions,
+      isTemplate: !!result.isTemplate,
+      source: result.source === "gemma4" ? "gemma4" : "template",
+      createdAt: typeof result.createdAt === "string" && result.createdAt.trim() ? result.createdAt : fallback.createdAt
+    };
+  }
+
+  function recordMonthlyOperationReport(report: MonthlyOperationReport) {
+    const entry = createMonthlyReportEntry(report);
+    const saved = saveMonthlyReportEntry(entry);
+    if (saved) {
+      refreshLocalMonthlyReportHistory();
+    } else {
+      setLocalMonthlyReportHistory((current) => [entry, ...current]);
+      setMonthlyReportError("리포트는 화면에 표시하지만 브라우저 저장소에는 저장하지 못했습니다.");
     }
     return entry;
   }
@@ -1094,7 +1157,14 @@ export function AdminDashboard() {
   }
 
   async function handleCopyKakaoMessage(key: string, riderName: string, riderMessage: string) {
-    const kakaoMessage = formatKakaoRiderMessage({ riderName, riderMessage });
+    const card = weeklyBriefingCards.find((item) => item.id === key);
+    const kakaoMessage = formatKakaoRiderMessage({
+      riderName,
+      riderMessage,
+      currentWeekCompleted: card?.currentCompleted ?? 0,
+      changeRate: card?.changeRatePercent ?? 0,
+      riskLevel: card?.riskLevel ?? "활용"
+    });
     try {
       await navigator.clipboard.writeText(kakaoMessage);
       setAiCopyStatusById((current) => ({
@@ -1124,12 +1194,46 @@ export function AdminDashboard() {
     }
   }
 
-  async function handleCopyMonthlyOperationReport() {
+  async function handleGenerateMonthlyOperationReport() {
+    const summary = buildCurrentMonthlyOperationReportSummary(readAICoachingHistoryEntries());
+    setMonthlyReportLoading(true);
+    setMonthlyReportError("");
+
     try {
-      await navigator.clipboard.writeText(formatMonthlyOperationReportText(monthlyOperationReport));
+      const response = await fetch("/api/ai-coaching/monthly-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify({ summary })
+      });
+
+      if (!response.ok) {
+        throw new Error("monthly report request failed");
+      }
+
+      const fallback = createTemplateMonthlyOperationReport(summary);
+      const result = normalizeMonthlyOperationReport(await response.json(), fallback);
+      recordMonthlyOperationReport(result);
+    } catch {
+      const fallback = createTemplateMonthlyOperationReport(summary);
+      recordMonthlyOperationReport(fallback);
+      setMonthlyReportError("AI 리포트 API 연결 실패로 기본 템플릿을 저장했습니다.");
+    } finally {
+      setMonthlyReportLoading(false);
+    }
+  }
+
+  async function handleCopyMonthlyOperationReport() {
+    if (!monthlyOperationReport) return;
+    const copyText = formatMonthlyOperationReportText(monthlyOperationReport);
+    try {
+      await navigator.clipboard.writeText(copyText);
       setMonthlyReportCopyStatus("복사 완료");
+      setMonthlyReportCopyFailed(false);
+      setMonthlyReportManualText("");
     } catch {
       setMonthlyReportCopyStatus("복사 실패");
+      setMonthlyReportCopyFailed(true);
+      setMonthlyReportManualText(copyText);
     } finally {
       window.setTimeout(() => setMonthlyReportCopyStatus(""), 1800);
     }
@@ -1430,10 +1534,17 @@ export function AdminDashboard() {
             />
 
             <MonthlyOperationReportPanel
+              summary={monthlyOperationReportSummary}
               report={monthlyOperationReport}
+              history={monthlyReportHistory}
+              loading={monthlyReportLoading}
               copyStatus={monthlyReportCopyStatus}
+              copyFailed={monthlyReportCopyFailed}
+              manualCopyText={monthlyReportManualText}
+              errorMessage={monthlyReportError}
               operationMemo={operationMemo}
               onMemoChange={setOperationMemo}
+              onGenerate={handleGenerateMonthlyOperationReport}
               onCopy={handleCopyMonthlyOperationReport}
             />
 
