@@ -7,6 +7,7 @@ import { RequiredColumnHealth } from "../components/common/RequiredColumnHealth"
 import { SectionHeader } from "../components/common/SectionHeader";
 import { AICoachingHistoryPanel } from "../components/admin/AICoachingHistoryPanel";
 import { AIStatusPanel } from "../components/admin/AIStatusPanel";
+import { DataQualityWarningPanel } from "../components/admin/DataQualityWarningPanel";
 import { ManagerActionChecklist } from "../components/admin/ManagerActionChecklist";
 import { MessageCopyPanel } from "../components/admin/MessageCopyPanel";
 import { MonthlyOperationReportPanel } from "../components/admin/MonthlyOperationReport";
@@ -15,6 +16,7 @@ import { OperationDataCheckPanel } from "../components/admin/OperationDataCheckP
 import { OperationLogsPanel } from "../components/admin/OperationLogsPanel";
 import { OperationMigrationPanel } from "../components/admin/OperationMigrationPanel";
 import { OperationStorageStatus } from "../components/admin/OperationStorageStatus";
+import { RiderAnalysisReasonPanel } from "../components/admin/RiderAnalysisReasonPanel";
 import { RiskBadge } from "../components/admin/RiskBadge";
 import { WeeklyAIBriefingPanel } from "../components/admin/WeeklyAIBriefingPanel";
 import type { UploadedWeekSummary } from "../types/newWeekBriefing";
@@ -53,6 +55,13 @@ import { readManagerActionChecklistRecords, saveManagerActionChecklist } from ".
 import type { ManagerActionChecklistRecord } from "../utils/managerActionChecklist";
 import { operationApi, writeOperationLog } from "../utils/operationApi";
 import { buildOperationDataCheckItems } from "../utils/operationDataValidator";
+import {
+  buildAICoachingAnalysisContext,
+  buildDataQualityWarnings,
+  buildRiderTrendAnalysis,
+  buildRiderTrendAnalysisMap,
+  type AICoachingAnalysisContext
+} from "../utils/riderTrendAnalysis";
 import { buildRiderMetrics, getGradeLabel } from "../utils/scoring";
 import { buildWeeklyBriefingSummary, createTemplateWeeklyAIBriefing } from "../utils/weeklyBriefingSummary";
 import {
@@ -181,6 +190,13 @@ function formatBriefingRate(value: number | null) {
   if (!Number.isFinite(value)) return "비교 불가";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(1)}%`;
+}
+
+function getTrendTone(label: string) {
+  if (label === "급락" || label === "하락세" || label === "확인 필요") return "danger";
+  if (label === "데이터 부족") return "warning";
+  if (label === "회복세" || label === "안정") return "good";
+  return "default";
 }
 
 function formatDelta(value: number, unit: string) {
@@ -586,27 +602,43 @@ export function AdminDashboard() {
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([
-      operationApi.getAICoachingHistory(),
-      operationApi.getWeeklyBriefings(),
-      operationApi.getMonthlyReports()
-    ])
-      .then(([history, weeklyBriefings, monthlyReports]) => {
-        if (!mounted) return;
-        setLocalAICoachingHistory(history);
-        setLocalWeeklyBriefingHistory(weeklyBriefings);
-        setLocalMonthlyReportHistory(monthlyReports);
+    async function loadOperationData() {
+      const [historyResult, weeklyBriefingsResult, monthlyReportsResult] = await Promise.allSettled([
+        operationApi.getAICoachingHistory(),
+        operationApi.getWeeklyBriefings(),
+        operationApi.getMonthlyReports()
+      ]);
+      if (!mounted) return;
+
+      if (historyResult.status === "fulfilled") {
+        setLocalAICoachingHistory(historyResult.value);
+      } else {
+        refreshLocalAICoachingHistory();
+      }
+
+      if (weeklyBriefingsResult.status === "fulfilled") {
+        setLocalWeeklyBriefingHistory(weeklyBriefingsResult.value);
+      } else {
+        refreshLocalWeeklyBriefingHistory();
+      }
+
+      if (monthlyReportsResult.status === "fulfilled") {
+        setLocalMonthlyReportHistory(monthlyReportsResult.value);
+      } else {
+        refreshLocalMonthlyReportHistory();
+      }
+
+      const hasServerLoadFailure = [historyResult, weeklyBriefingsResult, monthlyReportsResult].some((result) => result.status === "rejected");
+      if (hasServerLoadFailure) {
+        setOperationSaveStatus("local");
+        setOperationSaveDetail("일부 서버 조회 실패로 로컬 임시 데이터를 함께 사용합니다.");
+      } else {
         setOperationSaveStatus("server");
         setOperationSaveDetail("서버 저장소에서 운영 데이터를 불러왔습니다.");
-      })
-      .catch(() => {
-        if (!mounted) return;
-        refreshLocalAICoachingHistory();
-        refreshLocalWeeklyBriefingHistory();
-        refreshLocalMonthlyReportHistory();
-        setOperationSaveStatus("local");
-        setOperationSaveDetail("서버 조회 실패로 로컬 임시 데이터를 사용합니다.");
-      });
+      }
+    }
+
+    void loadOperationData();
     return () => {
       mounted = false;
     };
@@ -631,6 +663,30 @@ export function AdminDashboard() {
   }, []);
 
   const weekOptions = useMemo(() => sortWeekKeys(uploadedWeeks.map((item) => item.week)), [uploadedWeeks]);
+  const trendSourceMetrics = allMetrics.length ? allMetrics : currentMetrics;
+  const trendWeekOptions = useMemo(
+    () =>
+      sortWeekKeys([
+        ...new Set([
+          ...uploadedWeeks.map((item) => item.week).filter(Boolean),
+          ...trendSourceMetrics.flatMap((metric) => Object.keys(metric.weeklyCompleted ?? {})).filter(Boolean)
+        ])
+      ]),
+    [uploadedWeeks, trendSourceMetrics]
+  );
+  const riderTrendAnalysisMap = useMemo(
+    () => buildRiderTrendAnalysisMap(trendSourceMetrics, selectedWeekKey, trendWeekOptions),
+    [selectedWeekKey, trendSourceMetrics, trendWeekOptions]
+  );
+  const dataQualityWarnings = useMemo(
+    () =>
+      buildDataQualityWarnings({
+        metrics: trendSourceMetrics,
+        selectedWeekKey,
+        orderedWeekKeys: trendWeekOptions
+      }),
+    [selectedWeekKey, trendSourceMetrics, trendWeekOptions]
+  );
   const selectedWeekIndex = weekOptions.indexOf(selectedWeekKey);
   const previousWeekKey = selectedWeekIndex >= 0 ? weekOptions[selectedWeekIndex + 1] ?? "" : "";
 
@@ -732,6 +788,16 @@ export function AdminDashboard() {
       const previousCompletedForRider = previous?.totalCompleted ?? 0;
       const change = formatChange(metric.totalCompleted, previousCompletedForRider, "건");
       const changeRate = previousCompletedForRider ? ((metric.totalCompleted - previousCompletedForRider) / previousCompletedForRider) * 100 : 0;
+      const trendAnalysis =
+        riderTrendAnalysisMap.get(metric.riderId) ??
+        buildRiderTrendAnalysis({
+          riderName: metric.displayName,
+          weekKey: selectedWeekKey,
+          orderedWeekKeys: trendWeekOptions,
+          weeklyCompleted: metric.weeklyCompleted,
+          riskLevel: metric.riskLevel,
+          currentWeekCompleted: metric.totalCompleted
+        });
       return {
         id: metric.riderId,
         metric,
@@ -739,6 +805,7 @@ export function AdminDashboard() {
         change,
         riskLevel: metric.riskLevel,
         changeRate,
+        trendAnalysis,
         currentWeekCompleted: metric.totalCompleted,
         latestAICoachingCreatedAt: getLatestLocalHistoryCreatedAt(metric.displayName, selectedWeekKey)
       };
@@ -911,8 +978,12 @@ export function AdminDashboard() {
       await audit("CHECKLIST_UPDATED", `${record.riderName} 체크리스트 변경`, { riderName: record.riderName, weekKey: record.weekKey });
       return true;
     } catch {
-      const saved = false;
-      setSaveStatus(saved ? "local" : "local", "서버 저장 실패로 체크리스트를 로컬에 임시 저장합니다.");
+      const saved = saveManagerActionChecklist(record.riderName, record.weekKey, record.checkedItems);
+      if (saved) {
+        setSaveStatus("local", "서버 저장 실패로 체크리스트를 로컬에 임시 저장했습니다.");
+        return true;
+      }
+      setSaveStatus("failed", "체크리스트 저장에 실패했습니다.");
       return false;
     }
   }
@@ -1209,11 +1280,12 @@ export function AdminDashboard() {
     previousWeekCompleted: number,
     currentWeekCompleted: number,
     changeRate: number,
-    riskLevel: string
+    riskLevel: string,
+    analysisContext?: AICoachingAnalysisContext
   ) {
     setAiLoadingById((s) => ({ ...s, [key]: true }));
     try {
-      const payload = { riderId, riderName, weekKey, previousWeekCompleted, currentWeekCompleted, changeRate, riskLevel };
+      const payload = { riderId, riderName, weekKey, previousWeekCompleted, currentWeekCompleted, changeRate, riskLevel, analysisContext };
       const res = await fetch(`/api/ai-coaching/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeader() },
@@ -1268,7 +1340,7 @@ export function AdminDashboard() {
         const tpl = await fetch(`/api/ai-coaching/template`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...getAuthHeader() },
-          body: JSON.stringify({ riderName, previousWeekCompleted, currentWeekCompleted, changeRate, riskLevel })
+          body: JSON.stringify({ riderName, previousWeekCompleted, currentWeekCompleted, changeRate, riskLevel, analysisContext })
         });
         const data = tpl.ok ? await tpl.json() : null;
         if (data) {
@@ -1372,6 +1444,16 @@ export function AdminDashboard() {
       const previous = getMetricByRider(previousMetrics, metric);
       const previousCompleted = previous?.totalCompleted ?? 0;
       const changeRate = previousCompleted ? ((metric.totalCompleted - previousCompleted) / previousCompleted) * 100 : 0;
+      const trendAnalysis =
+        riderTrendAnalysisMap.get(metric.riderId) ??
+        buildRiderTrendAnalysis({
+          riderName: metric.displayName,
+          weekKey: selectedWeekKey,
+          orderedWeekKeys: trendWeekOptions,
+          weeklyCompleted: metric.weeklyCompleted,
+          riskLevel: metric.riskLevel,
+          currentWeekCompleted: metric.totalCompleted
+        });
 
       return {
         riderId: metric.riderId,
@@ -1380,7 +1462,8 @@ export function AdminDashboard() {
         previousWeekCompleted: previousCompleted,
         currentWeekCompleted: metric.totalCompleted,
         changeRate,
-        riskLevel: metric.riskLevel
+        riskLevel: metric.riskLevel,
+        analysisContext: buildAICoachingAnalysisContext(trendAnalysis)
       };
     });
 
@@ -1735,6 +1818,8 @@ export function AdminDashboard() {
             const cardRiderName = card.riderName;
             const visibleAiResult = getVisibleAICoachingResult(card.id, cardRiderName, selectedWeekKey);
             const cardHistory = cardRiderName ? getLocalHistoryFor(cardRiderName, selectedWeekKey) : [];
+            const cardTrendAnalysis = card.riderId ? riderTrendAnalysisMap.get(card.riderId) : undefined;
+            const cardAiInputPreview = cardTrendAnalysis ? buildAICoachingAnalysisContext(cardTrendAnalysis) : undefined;
 
             return (
             <details className={`weekly-briefing-card ${card.tone}`} key={card.id}>
@@ -1767,7 +1852,8 @@ export function AdminDashboard() {
                           (card as any).previousCompleted ?? 0,
                           (card as any).currentCompleted ?? 0,
                           (card as any).changeRatePercent ?? 0,
-                          (card as any).riskLevel ?? "허용"
+                          (card as any).riskLevel ?? "허용",
+                          cardAiInputPreview
                         )
                       }
                     >
@@ -2070,6 +2156,7 @@ export function AdminDashboard() {
             {batchStatus ? <span className="batch-status">{batchStatus}</span> : null}
           </div>
         </div>
+        <DataQualityWarningPanel warnings={dataQualityWarnings} compact />
         {batchProgress ? (
           <div className="batch-progress-row">
             <strong>일괄 진행</strong>
@@ -2153,21 +2240,36 @@ export function AdminDashboard() {
           </div>
         ) : null}
         <div className="rider-list">
-          {riderComparisons.map(({ metric, previousCompleted, change }) => {
+          {riderComparisons.map(({ metric, previousCompleted, change, trendAnalysis }) => {
             const riderAiKey = `rider-${metric.riderId}`;
             const visibleAiResult = getVisibleAICoachingResult(riderAiKey, metric.displayName, selectedWeekKey);
             const riderHistory = getLocalHistoryFor(metric.displayName, selectedWeekKey);
+            const analysisContext = buildAICoachingAnalysisContext(trendAnalysis);
+            const changeRateForAI = previousCompleted ? ((metric.totalCompleted - previousCompleted) / previousCompleted) * 100 : 0;
+            const aiInputPreview = {
+              riderName: metric.displayName,
+              weekKey: selectedWeekKey,
+              previousWeekCompleted: previousCompleted,
+              currentWeekCompleted: metric.totalCompleted,
+              changeRate: changeRateForAI,
+              riskLevel: metric.riskLevel,
+              analysisContext
+            };
 
             return (
             <article className="list-card rider-risk-card" key={metric.riderId}>
               <div>
-                <strong>{metric.displayName}</strong>
+                <div className="rider-risk-title-row">
+                  <strong>{metric.displayName}</strong>
+                  <span className={`trend-badge ${getTrendTone(trendAnalysis.trendLabel)}`}>{trendAnalysis.trendLabel}</span>
+                </div>
                 <span>
                   {previousWeekKey || "직전 주차"} {formatNumber(previousCompleted)}건 → {selectedWeekKey} {formatNumber(metric.totalCompleted)}건
                 </span>
                 <span>
                   {change.detail} · 멀티 {Math.round(metric.multiDeliveryRate * 100)}% · {getGradeLabel(metric.riderGrade)}
                 </span>
+                <RiderAnalysisReasonPanel analysis={trendAnalysis} aiInputPreview={aiInputPreview} />
               </div>
               <div className="list-card-right">
                 <b>{metric.dispatchScore}점</b>
@@ -2185,8 +2287,9 @@ export function AdminDashboard() {
                         selectedWeekKey,
                         previousCompleted,
                         metric.totalCompleted,
-                        previousCompleted ? ((metric.totalCompleted - previousCompleted) / previousCompleted) * 100 : 0,
-                        metric.riskLevel
+                        changeRateForAI,
+                        metric.riskLevel,
+                        analysisContext
                       )
                     }
                   >

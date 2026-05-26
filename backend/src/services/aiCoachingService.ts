@@ -1,4 +1,5 @@
 import type { RiderRiskLevel } from "../../../src/types/rider";
+import type { AICoachingAnalysisContext } from "../../../src/utils/riderTrendAnalysis";
 
 interface AICoachingInput {
   riderName: string;
@@ -6,6 +7,7 @@ interface AICoachingInput {
   currentWeekCompleted: number;
   changeRate: number;
   riskLevel: RiderRiskLevel;
+  analysisContext?: AICoachingAnalysisContext;
 }
 
 interface AICoachingOutput {
@@ -28,15 +30,17 @@ export interface OllamaStatusResult {
 
 // 기본 템플릿 메시지 생성
 function getTemplateMessages(input: AICoachingInput): AICoachingOutput {
-  const { riderName, previousWeekCompleted, currentWeekCompleted, changeRate, riskLevel } = input;
+  const { riderName, previousWeekCompleted, currentWeekCompleted, changeRate, riskLevel, analysisContext } = input;
   const trend = changeRate > 0 ? "증가" : changeRate < 0 ? "감소" : "유지";
+  const trendLabel = analysisContext?.trendLabel ? ` · 추세 ${analysisContext.trendLabel}` : "";
+  const firstRiskReason = analysisContext?.riskReasons[0] ? ` (${analysisContext.riskReasons[0]})` : "";
 
   const adminMessages: Record<RiderRiskLevel, (name: string, prev: number, curr: number, rate: number) => string> = {
-    고위험: () => `⚠️ [${riderName}] 위험 수준 확대 추세. 전주 대비 ${trend}. 즉시 개입 필요.`,
-    관리주의: () => `📊 [${riderName}] 관리 주의 대상. 주간 ${trend} 패턴 모니터링.`,
-    허용: () => `✓ [${riderName}] 일반 수준. 지속적인 성과 관리.`,
-    안정: () => `📈 [${riderName}] 안정적 운영 중. 성과 유지 지도.`,
-    에이스: () => `⭐ [${riderName}] 우수 운영자. 스스로 성과 관리 중.`
+    고위험: () => `⚠️ [${riderName}] 위험 수준 확대 추세${trendLabel}. 전주 대비 ${trend}. 즉시 개입 필요${firstRiskReason}`,
+    관리주의: () => `📊 [${riderName}] 관리 주의 대상${trendLabel}. 주간 ${trend} 패턴 모니터링${firstRiskReason}`,
+    허용: () => `✓ [${riderName}] 일반 수준${trendLabel}. 지속적인 성과 관리${firstRiskReason}`,
+    안정: () => `📈 [${riderName}] 안정적 운영 중${trendLabel}. 성과 유지 지도${firstRiskReason}`,
+    에이스: () => `⭐ [${riderName}] 우수 운영자${trendLabel}. 스스로 성과 관리 중${firstRiskReason}`
   };
 
   const riderMessages: Record<RiderRiskLevel, (name: string, prev: number, curr: number, rate: number) => string> = {
@@ -101,9 +105,18 @@ async function generateWithOllama(input: AICoachingInput): Promise<AICoachingOut
 
 // 프롬프트 생성
 function buildPrompt(input: AICoachingInput): string {
-  const { riderName, previousWeekCompleted, currentWeekCompleted, changeRate, riskLevel } = input;
+  const { riderName, previousWeekCompleted, currentWeekCompleted, changeRate, riskLevel, analysisContext } = input;
   const trend = changeRate > 0 ? "증가" : changeRate < 0 ? "감소" : "유지";
   const changePercent = Math.abs(changeRate).toFixed(1);
+  const analysisSection = analysisContext
+    ? `
+Calculated Analysis Context:
+- Trend Label: ${analysisContext.trendLabel}
+- Risk Reasons: ${analysisContext.riskReasons.join(" / ") || "none"}
+- Data Warnings: ${analysisContext.dataWarnings.join(" / ") || "none"}
+- Four Week Trend Summary: ${analysisContext.fourWeekTrendSummary}
+- Recommended Manager Actions: ${analysisContext.recommendedManagerActions.join(" / ") || "none"}`
+    : "";
 
   return `You are a supportive delivery coaching assistant. Generate TWO coaching messages based on the following rider performance data:
 
@@ -113,8 +126,13 @@ Rider Information:
 - Current Week Completions: ${currentWeekCompleted}
 - Change Rate: ${changePercent}% (${trend})
 - Risk Level: ${riskLevel}
+${analysisSection}
 
-IMPORTANT: Do NOT calculate or provide monetary amounts. Only provide coaching based on the given metrics.
+IMPORTANT:
+- Use only the provided numbers and analysis results.
+- Do not calculate, infer, estimate, or create any new numbers.
+- Gemma 4 must explain and summarize only; the application code already calculated the metrics.
+- Do NOT calculate or provide monetary amounts.
 
 Generate exactly two messages separated by ---|---:
 

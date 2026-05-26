@@ -7,6 +7,7 @@ import { generateWeeklyAIBriefing } from "../services/weeklyBriefingService";
 import type { RiderRiskLevel } from "../../../src/types/rider";
 import type { AICoachingHistoryEntry, WeeklyAIBriefingSummary } from "../../../src/types/aiCoaching";
 import type { MonthlyOperationReportSummary } from "../../../src/utils/monthlyOperationReport";
+import type { AICoachingAnalysisContext, RiderTrendLabel } from "../../../src/utils/riderTrendAnalysis";
 
 const router = Router();
 
@@ -35,10 +36,32 @@ interface GenerateCoachingRequest {
   currentWeekCompleted: number;
   changeRate: number;
   riskLevel: RiderRiskLevel;
+  analysisContext?: AICoachingAnalysisContext;
 }
 
 function isNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function normalizeAnalysisContext(value: unknown): AICoachingAnalysisContext | undefined {
+  if (!isRecord(value)) return undefined;
+  const validTrendLabels: RiderTrendLabel[] = ["급락", "하락세", "회복세", "안정", "신규", "복귀", "데이터 부족", "확인 필요"];
+  const trendLabel = validTrendLabels.includes(value.trendLabel as RiderTrendLabel) ? (value.trendLabel as RiderTrendLabel) : "확인 필요";
+  return {
+    trendLabel,
+    riskReasons: stringArray(value.riskReasons),
+    dataWarnings: stringArray(value.dataWarnings),
+    fourWeekTrendSummary: typeof value.fourWeekTrendSummary === "string" ? value.fourWeekTrendSummary : "",
+    recommendedManagerActions: stringArray(value.recommendedManagerActions)
+  };
 }
 
 function isWeeklyBriefingSummary(value: unknown): value is WeeklyAIBriefingSummary {
@@ -150,7 +173,8 @@ router.post("/generate", async (req: Request, res: Response, next) => {
       previousWeekCompleted: body.previousWeekCompleted,
       currentWeekCompleted: body.currentWeekCompleted,
       changeRate: body.changeRate,
-      riskLevel: body.riskLevel as RiderRiskLevel
+      riskLevel: body.riskLevel as RiderRiskLevel,
+      analysisContext: normalizeAnalysisContext(body.analysisContext)
     });
 
     const historyEntry: AICoachingHistoryEntry = {
@@ -215,7 +239,8 @@ router.post("/template", async (req: Request, res: Response, next) => {
       previousWeekCompleted: body.previousWeekCompleted,
       currentWeekCompleted: body.currentWeekCompleted,
       changeRate: body.changeRate,
-      riskLevel: body.riskLevel as RiderRiskLevel
+      riskLevel: body.riskLevel as RiderRiskLevel,
+      analysisContext: normalizeAnalysisContext(body.analysisContext)
     });
 
     res.json(result);
@@ -232,6 +257,7 @@ interface BatchCoachingItem {
   currentWeekCompleted: number;
   changeRate: number;
   riskLevel: RiderRiskLevel;
+  analysisContext?: AICoachingAnalysisContext;
 }
 
 interface BatchCoachingResponseItem {
@@ -258,7 +284,8 @@ async function generateBatchCoaching(items: BatchCoachingItem[]): Promise<BatchC
           previousWeekCompleted: item.previousWeekCompleted,
           currentWeekCompleted: item.currentWeekCompleted,
           changeRate: item.changeRate,
-          riskLevel: item.riskLevel
+          riskLevel: item.riskLevel,
+          analysisContext: item.analysisContext
         });
 
         const historyEntry: AICoachingHistoryEntry = {
@@ -323,7 +350,8 @@ router.post("/batch", async (req: Request, res: Response, next) => {
       previousWeekCompleted: Number(item.previousWeekCompleted ?? 0),
       currentWeekCompleted: Number(item.currentWeekCompleted ?? 0),
       changeRate: Number(item.changeRate ?? 0),
-      riskLevel: validRiskLevels.includes(item.riskLevel as RiderRiskLevel) ? (item.riskLevel as RiderRiskLevel) : "허용"
+      riskLevel: validRiskLevels.includes(item.riskLevel as RiderRiskLevel) ? (item.riskLevel as RiderRiskLevel) : "허용",
+      analysisContext: normalizeAnalysisContext(item.analysisContext)
     }));
 
     const results = await generateBatchCoaching(batchItems);
