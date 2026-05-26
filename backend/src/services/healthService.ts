@@ -72,6 +72,7 @@ export const operationHealthFileNames = [
   "manager-action-checklists.json",
   "weekly-briefings.json",
   "monthly-reports.json",
+  "operation-briefings.json",
   "message-queue.json",
   "message-send-history.json",
   "operation-logs.json"

@@ -3,11 +3,13 @@ import type { Request, Response } from "express";
 import { checkOllamaStatus, generateAICoachingMessages, getDefaultCoachingMessages } from "../services/aiCoachingService";
 import { saveAICoachingHistory, getAICoachingHistory } from "../services/aiCoachingHistoryService";
 import { generateMonthlyOperationReport } from "../services/monthlyReportService";
+import { generateOperationBriefing } from "../services/operationBriefingService";
 import { generateWeeklyAIBriefing } from "../services/weeklyBriefingService";
 import type { RiderRiskLevel } from "../../../src/types/rider";
 import type { AICoachingHistoryEntry, WeeklyAIBriefingSummary } from "../../../src/types/aiCoaching";
 import type { MonthlyOperationReportSummary } from "../../../src/utils/monthlyOperationReport";
 import type { AICoachingAnalysisContext, RiderTrendLabel } from "../../../src/utils/riderTrendAnalysis";
+import type { OperationBriefingSummaryInput } from "../../../src/types/operationBriefing";
 
 const router = Router();
 
@@ -98,6 +100,57 @@ function isMonthlyOperationReportSummary(value: unknown): value is MonthlyOperat
     typeof summary.operationMemo === "string"
   );
 }
+
+function isNumberRecord(value: unknown, keys: string[]) {
+  if (!isRecord(value)) return false;
+  return keys.every((key) => isNumber(value[key]));
+}
+
+function isOperationBriefingSummary(value: unknown): value is OperationBriefingSummaryInput {
+  const summary = value as Partial<OperationBriefingSummaryInput>;
+  return (
+    !!summary &&
+    typeof summary.weekKey === "string" &&
+    isNumberRecord(summary.summaryStats, [
+      "totalRiderCount",
+      "highRiskRiderCount",
+      "cautionRiderCount",
+      "stableRiderCount",
+      "decliningRiderCount",
+      "recoveringRiderCount",
+      "newOrReturningRiderCount",
+      "dataWarningCount",
+      "unsentQueueCount",
+      "sentQueueCount",
+      "incompleteChecklistItemCount",
+      "weeklyAICoachingGeneratedCount"
+    ]) &&
+    Array.isArray(summary.riskRiderSummaries) &&
+    isRecord(summary.messageQueueStats) &&
+    isRecord(summary.actionChecklistStats) &&
+    Array.isArray(summary.dataWarnings) &&
+    Array.isArray(summary.priorityActionHints)
+  );
+}
+
+router.post("/operation-briefing", async (req: Request, res: Response, next) => {
+  try {
+    const body = isOperationBriefingSummary(req.body)
+      ? req.body
+      : isRecord(req.body) && isOperationBriefingSummary(req.body.summary)
+        ? req.body.summary
+        : null;
+
+    if (!body) {
+      res.status(400).json({ message: "operation briefing summary 형식이 올바르지 않습니다." });
+      return;
+    }
+
+    res.json(await generateOperationBriefing(body.weekKey, body));
+  } catch (error) {
+    next(error);
+  }
+});
 
 // POST /api/ai-coaching/weekly-briefing - 관리자 주간 AI 브리핑 생성
 router.post("/weekly-briefing", async (req: Request, res: Response, next) => {

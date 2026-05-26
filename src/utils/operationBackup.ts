@@ -3,6 +3,7 @@ export const operationStorageKeys = {
   managerActions: "rider-coaching-manager-actions-v1",
   weeklyBriefings: "rider-coaching-weekly-ai-briefings-v1",
   monthlyReports: "rider-coaching-monthly-operation-reports-v1",
+  operationBriefings: "rider-coaching-operation-briefings-v1",
   messageQueue: "rider-coaching-message-queue",
   messageSendHistory: "rider-coaching-message-send-history",
   operationLogs: "rider-coaching-operation-logs-v1"
@@ -28,6 +29,7 @@ export interface OperationBackupData {
   managerActions: unknown[];
   weeklyBriefings: unknown[];
   monthlyReports: unknown[];
+  operationBriefings: unknown[];
   messageQueue: unknown[];
   messageSendHistory: unknown[];
   operationLogs: unknown[];
@@ -111,6 +113,7 @@ function normalizeBackupData(data: Record<string, unknown>): OperationBackupData
     managerActions: Array.isArray(data.managerActions) ? data.managerActions : [],
     weeklyBriefings: Array.isArray(data.weeklyBriefings) ? data.weeklyBriefings : [],
     monthlyReports: Array.isArray(data.monthlyReports) ? data.monthlyReports : [],
+    operationBriefings: Array.isArray(data.operationBriefings) ? data.operationBriefings : [],
     messageQueue: Array.isArray(data.messageQueue) ? data.messageQueue : [],
     messageSendHistory: Array.isArray(data.messageSendHistory) ? data.messageSendHistory : [],
     operationLogs: Array.isArray(data.operationLogs) ? data.operationLogs : [],
@@ -120,7 +123,7 @@ function normalizeBackupData(data: Record<string, unknown>): OperationBackupData
 
 export function createOperationBackup(
   storage?: StorageLike,
-  overrides: Partial<Pick<OperationBackupData, "messageQueue" | "messageSendHistory" | "operationLogs">> = {}
+  overrides: Partial<Pick<OperationBackupData, "operationBriefings" | "messageQueue" | "messageSendHistory" | "operationLogs">> = {}
 ): OperationBackupFile {
   const aiCoachingHistory = safeReadOperationArray(operationStorageKeys.aiCoachingHistory, storage);
 
@@ -133,6 +136,7 @@ export function createOperationBackup(
       managerActions: safeReadOperationArray(operationStorageKeys.managerActions, storage),
       weeklyBriefings: safeReadOperationArray(operationStorageKeys.weeklyBriefings, storage),
       monthlyReports: safeReadOperationArray(operationStorageKeys.monthlyReports, storage),
+      operationBriefings: overrides.operationBriefings ?? safeReadOperationArray(operationStorageKeys.operationBriefings, storage),
       messageQueue: overrides.messageQueue ?? safeReadOperationArray(operationStorageKeys.messageQueue, storage),
       messageSendHistory: overrides.messageSendHistory ?? safeReadOperationArray(operationStorageKeys.messageSendHistory, storage),
       operationLogs: overrides.operationLogs ?? safeReadOperationArray(operationStorageKeys.operationLogs, storage),
@@ -153,7 +157,7 @@ export function validateOperationBackup(value: unknown): { valid: true; backup: 
   const requiredArrays = ["aiCoachingHistory", "managerActions", "weeklyBriefings", "monthlyReports", "messageCopySnapshots"];
   const invalidKey = requiredArrays.find((key) => !Array.isArray(data[key]));
   if (invalidKey) return { valid: false, reason: `${invalidKey} 데이터 형식이 올바르지 않습니다.` };
-  const optionalArrays = ["messageQueue", "messageSendHistory", "operationLogs"];
+  const optionalArrays = ["messageQueue", "messageSendHistory", "operationLogs", "operationBriefings"];
   const invalidOptionalKey = optionalArrays.find((key) => data[key] !== undefined && !Array.isArray(data[key]));
   if (invalidOptionalKey) return { valid: false, reason: `${invalidOptionalKey} 데이터 형식이 올바르지 않습니다.` };
 
@@ -170,6 +174,7 @@ export function restoreOperationBackup(value: unknown, mode: OperationRestoreMod
     [operationStorageKeys.managerActions, backup.data.managerActions],
     [operationStorageKeys.weeklyBriefings, backup.data.weeklyBriefings],
     [operationStorageKeys.monthlyReports, backup.data.monthlyReports],
+    [operationStorageKeys.operationBriefings, backup.data.operationBriefings],
     [operationStorageKeys.messageQueue, backup.data.messageQueue],
     [operationStorageKeys.messageSendHistory, backup.data.messageSendHistory],
     [operationStorageKeys.operationLogs, backup.data.operationLogs]

@@ -61,6 +61,7 @@ Without the admin header, `/api/health/full` should return 403.
 Open `http://localhost:5174/admin` and confirm:
 
 - The first screen shows today's priority summary, weekly changes, rider risk summary, AI status, and operation readiness before lower-priority maintenance panels.
+- "AI 운영본부 브리핑" can generate a weekly executive summary from code-calculated stats and shows three priority action cards.
 - AI status check is normal and fallback is not used.
 - Operation API storage badge can show server saved status.
 - Operation logs load in latest-first order.
@@ -70,10 +71,11 @@ Open `http://localhost:5174/admin` and confirm:
 Admin operation flow:
 
 1. Review "오늘 먼저 볼 것" and "이번 주 핵심 변화".
-2. Open "라이더 위험도 요약" and generate AI coaching for high-risk riders.
-3. Add rider messages to "발송 대기함".
-4. Copy Kakao/SMS text manually and mark sent or hold.
-5. Review operation logs, backup, and monthly report after daily work.
+2. Generate "AI 운영본부 브리핑" and copy either 대표 보고용 or 관리자 공유용 text when needed.
+3. Open "라이더 위험도 요약" and generate AI coaching for high-risk riders.
+4. Add rider messages to "발송 대기함".
+5. Copy Kakao/SMS text manually and mark sent or hold.
+6. Review operation logs, backup, and monthly report after daily work.
 
 ## 6. Rider Screen Exposure Check
 
@@ -103,6 +105,7 @@ Use the admin backup panel to download the full operation JSON. The backup shoul
 - AI coaching history
 - Manager action checklists
 - Weekly AI briefings
+- AI operation headquarters briefings
 - Monthly operation reports
 - Message queue
 - Message send history

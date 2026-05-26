@@ -140,3 +140,24 @@ test("operation storage supports message queue and send history collections", as
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+test("operation storage supports AI operation briefing collection", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "operation-storage-"));
+  try {
+    const service = createOperationStorageService(rootDir);
+
+    await service.operationBriefings.save({
+      id: "operation-briefing-1",
+      weekKey: "5월2주차",
+      executiveSummary: "고위험 2명 확인",
+      createdAt: "2026-05-26T00:00:00.000Z"
+    });
+
+    const saved = await service.operationBriefings.getAll();
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0].id, "operation-briefing-1");
+    assert.match(await readFile(join(rootDir, "operation-briefings.json"), "utf8"), /operation-briefing-1/);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});

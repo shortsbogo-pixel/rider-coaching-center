@@ -166,6 +166,28 @@ router.get("/monthly-reports", async (_req, res) => {
 
 router.post("/monthly-reports", postCollection(operationStorageService.monthlyReports, "monthly-report"));
 
+router.get("/operation-briefings", async (_req, res) => {
+  try {
+    ok(res, await operationStorageService.operationBriefings.getAll());
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.post("/operation-briefings", postCollection(operationStorageService.operationBriefings, "operation-briefing"));
+
+router.get("/operation-briefings/week/:weekKey", async (req, res) => {
+  try {
+    const weekKey = decodeURIComponent(req.params.weekKey).trim();
+    ok(
+      res,
+      (await operationStorageService.operationBriefings.getAll()).filter((entry) => String(entry.weekKey ?? "").trim() === weekKey)
+    );
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
 router.get("/message-copy-history", async (_req, res) => {
   try {
     ok(res, await operationStorageService.messageCopyHistory.getAll());

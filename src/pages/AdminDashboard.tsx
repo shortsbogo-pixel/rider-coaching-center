@@ -15,6 +15,7 @@ import { MessageQueuePanel } from "../components/admin/MessageQueuePanel";
 import { MonthlyOperationReportPanel } from "../components/admin/MonthlyOperationReport";
 import { OperationBackupPanel } from "../components/admin/OperationBackupPanel";
 import { OperationDataCheckPanel } from "../components/admin/OperationDataCheckPanel";
+import { OperationBriefingPanel } from "../components/admin/OperationBriefingPanel";
 import { OperationLogsPanel } from "../components/admin/OperationLogsPanel";
 import { OperationMigrationPanel } from "../components/admin/OperationMigrationPanel";
 import { OperationStorageStatus } from "../components/admin/OperationStorageStatus";
@@ -33,6 +34,7 @@ import type {
   WeeklyAIBriefingResult
 } from "../types/aiCoaching";
 import type { MigrationResult, OperationActionType, OperationLogEntry, OperationSaveStatus } from "../types/operation";
+import type { LocalOperationBriefingEntry, OperationBriefingResult } from "../types/operationBriefing";
 import { getAuthHeader } from "../utils/authStore";
 import {
   createAICoachingHistoryEntry,
@@ -57,6 +59,15 @@ import { buildLunchMissionBrief, getUploadHealth, getWeakestAction } from "../ut
 import { readManagerActionChecklistRecords, saveManagerActionChecklist } from "../utils/managerActionChecklist";
 import type { ManagerActionChecklistRecord } from "../utils/managerActionChecklist";
 import { operationApi, writeOperationLog } from "../utils/operationApi";
+import { generateOperationBriefing, operationBriefingApi } from "../utils/operationBriefingApi";
+import {
+  buildOperationBriefingSummary,
+  createOperationBriefingEntry,
+  createTemplateOperationBriefing,
+  formatExecutiveOperationBriefingText,
+  formatManagerOperationBriefingText
+} from "../utils/operationBriefingSummary";
+import { readOperationBriefingEntries, saveOperationBriefingEntry } from "../utils/operationBriefingHistory";
 import { operationStorageKeys, safeReadOperationArray, safeWriteOperationArray } from "../utils/operationBackup";
 import { messageQueueApi } from "../utils/messageQueueApi";
 import {
@@ -581,9 +592,15 @@ export function AdminDashboard() {
   const [localAICoachingHistory, setLocalAICoachingHistory] = useState<LocalAICoachingHistoryEntry[]>(() => readAICoachingHistoryEntries());
   const [localWeeklyBriefingHistory, setLocalWeeklyBriefingHistory] = useState<LocalWeeklyAIBriefingEntry[]>(() => readWeeklyAIBriefingEntries());
   const [localMonthlyReportHistory, setLocalMonthlyReportHistory] = useState<LocalMonthlyReportEntry[]>(() => readMonthlyReportEntries());
+  const [localOperationBriefingHistory, setLocalOperationBriefingHistory] = useState<LocalOperationBriefingEntry[]>(() => readOperationBriefingEntries());
   const [weeklyBriefingLoading, setWeeklyBriefingLoading] = useState(false);
   const [weeklyBriefingError, setWeeklyBriefingError] = useState("");
   const [weeklyBriefingCopyStatus, setWeeklyBriefingCopyStatus] = useState("");
+  const [operationBriefingLoading, setOperationBriefingLoading] = useState(false);
+  const [operationBriefingError, setOperationBriefingError] = useState("");
+  const [operationBriefingCopyStatus, setOperationBriefingCopyStatus] = useState("");
+  const [operationBriefingCopyFailed, setOperationBriefingCopyFailed] = useState(false);
+  const [operationBriefingManualText, setOperationBriefingManualText] = useState("");
   const [managerActionRevision, setManagerActionRevision] = useState(0);
   const [operationMemo, setOperationMemo] = useState("");
   const [monthlyReportLoading, setMonthlyReportLoading] = useState(false);
@@ -623,10 +640,11 @@ export function AdminDashboard() {
   useEffect(() => {
     let mounted = true;
     async function loadOperationData() {
-      const [historyResult, weeklyBriefingsResult, monthlyReportsResult, messageQueueResult, messageSendHistoryResult, operationLogsResult] = await Promise.allSettled([
+      const [historyResult, weeklyBriefingsResult, monthlyReportsResult, operationBriefingsResult, messageQueueResult, messageSendHistoryResult, operationLogsResult] = await Promise.allSettled([
         operationApi.getAICoachingHistory(),
         operationApi.getWeeklyBriefings(),
         operationApi.getMonthlyReports(),
+        operationBriefingApi.getBriefings(),
         messageQueueApi.getQueue(),
         messageQueueApi.getSendHistory(),
         operationApi.getLogs()
@@ -651,6 +669,13 @@ export function AdminDashboard() {
         refreshLocalMonthlyReportHistory();
       }
 
+      if (operationBriefingsResult.status === "fulfilled") {
+        setLocalOperationBriefingHistory(operationBriefingsResult.value);
+        safeWriteOperationArray(operationStorageKeys.operationBriefings, operationBriefingsResult.value);
+      } else {
+        refreshLocalOperationBriefingHistory();
+      }
+
       if (messageQueueResult.status === "fulfilled") {
         setMessageQueueItems(messageQueueResult.value);
       } else {
@@ -670,7 +695,7 @@ export function AdminDashboard() {
         setOperationLogs(safeReadOperationArray(operationStorageKeys.operationLogs) as OperationLogEntry[]);
       }
 
-      const hasServerLoadFailure = [historyResult, weeklyBriefingsResult, monthlyReportsResult, messageQueueResult, messageSendHistoryResult, operationLogsResult].some(
+      const hasServerLoadFailure = [historyResult, weeklyBriefingsResult, monthlyReportsResult, operationBriefingsResult, messageQueueResult, messageSendHistoryResult, operationLogsResult].some(
         (result) => result.status === "rejected"
       );
       if (hasServerLoadFailure) {
@@ -909,6 +934,27 @@ export function AdminDashboard() {
     .filter((entry) => entry.monthKey.trim() === monthlyOperationReportSummary.monthKey)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const monthlyOperationReport = monthlyReportHistory[0];
+  const operationBriefingSummary = buildOperationBriefingSummary({
+    weekKey: selectedWeekKey,
+    riders: riderComparisonsBase.map(({ metric, changeRate, trendAnalysis }) => ({
+      riderName: metric.displayName,
+      riskLevel: metric.riskLevel,
+      currentWeekCompleted: metric.totalCompleted,
+      changeRate,
+      trendLabel: trendAnalysis.trendLabel,
+      riskReasons: trendAnalysis.riskReasons,
+      recommendedManagerActions: trendAnalysis.recommendedManagerActions
+    })),
+    messageQueue: messageQueueItems,
+    actionRecords: managerActionRecords,
+    coachingHistory: localAICoachingHistory,
+    dataWarnings: dataQualityWarnings,
+    monthlyReportSummary: monthlyOperationReport?.operationSummary
+  });
+  const operationBriefingHistory = localOperationBriefingHistory
+    .filter((entry) => entry.weekKey.trim() === selectedWeekKey.trim())
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const latestOperationBriefing = operationBriefingHistory[0];
   const operationDataCheckItems = buildOperationDataCheckItems({
     currentRiderCount: currentMetrics.length,
     aiCoachingHistory: localAICoachingHistory,
@@ -919,7 +965,8 @@ export function AdminDashboard() {
       localAICoachingHistory.length > 0 ||
       managerActionRecords.length > 0 ||
       localWeeklyBriefingHistory.length > 0 ||
-      localMonthlyReportHistory.length > 0
+      localMonthlyReportHistory.length > 0 ||
+      localOperationBriefingHistory.length > 0
   });
   const highRiskRiderCount = currentMetrics.filter((metric) => metric.riskLevel === "고위험").length;
   const cautionRiderCount = currentMetrics.filter((metric) => metric.riskLevel === "관리주의").length;
@@ -979,6 +1026,10 @@ export function AdminDashboard() {
     setLocalMonthlyReportHistory(readMonthlyReportEntries());
   }
 
+  function refreshLocalOperationBriefingHistory() {
+    setLocalOperationBriefingHistory(readOperationBriefingEntries());
+  }
+
   function refreshLocalMessageQueue() {
     setMessageQueueItems(readMessageQueueItems());
   }
@@ -995,6 +1046,7 @@ export function AdminDashboard() {
     refreshLocalAICoachingHistory();
     refreshLocalWeeklyBriefingHistory();
     refreshLocalMonthlyReportHistory();
+    refreshLocalOperationBriefingHistory();
     refreshLocalMessageQueue();
     refreshLocalMessageSendHistory();
     refreshLocalOperationLogs();
@@ -1081,6 +1133,27 @@ export function AdminDashboard() {
     }
   }
 
+  async function saveOperationBriefing(entry: LocalOperationBriefingEntry, actionType: OperationActionType = "OPERATION_BRIEFING_GENERATED") {
+    try {
+      await operationBriefingApi.saveBriefing(entry);
+      saveOperationBriefingEntry(entry);
+      setLocalOperationBriefingHistory((current) => [entry, ...current.filter((item) => item.id !== entry.id)]);
+      setSaveStatus("server", "AI 운영본부 브리핑을 서버에 저장했습니다.");
+      await audit(actionType, `${entry.weekKey} AI 운영본부 브리핑 생성`, { weekKey: entry.weekKey });
+      return true;
+    } catch {
+      const saved = saveOperationBriefingEntry(entry);
+      if (saved) {
+        refreshLocalOperationBriefingHistory();
+        setSaveStatus("local", "서버 저장 실패로 AI 운영본부 브리핑을 로컬에 임시 저장했습니다.");
+      } else {
+        setLocalOperationBriefingHistory((current) => [entry, ...current]);
+        setSaveStatus("failed", "AI 운영본부 브리핑 저장에 실패했습니다.");
+      }
+      return false;
+    }
+  }
+
   async function saveMonthlyReport(entry: LocalMonthlyReportEntry) {
     try {
       await operationApi.saveMonthlyReport(entry);
@@ -1107,7 +1180,8 @@ export function AdminDashboard() {
       { items: readAICoachingHistoryEntries(), save: operationApi.migrateAICoachingHistory },
       { items: readManagerActionChecklistRecords(), save: operationApi.migrateActionChecklists },
       { items: readWeeklyAIBriefingEntries(), save: operationApi.migrateWeeklyBriefings },
-      { items: readMonthlyReportEntries(), save: operationApi.migrateMonthlyReports }
+      { items: readMonthlyReportEntries(), save: operationApi.migrateMonthlyReports },
+      { items: readOperationBriefingEntries(), save: (items: LocalOperationBriefingEntry[]) => Promise.all(items.map((item) => operationBriefingApi.saveBriefing(item))) }
     ];
     const result: MigrationResult = { successCount: 0, failedCount: 0, skippedCount: 0 };
 
@@ -1277,6 +1351,98 @@ export function AdminDashboard() {
     } finally {
       setWeeklyBriefingLoading(false);
     }
+  }
+
+  function normalizeOperationBriefingResult(data: unknown, fallback: OperationBriefingResult): OperationBriefingResult {
+    const result = data as Partial<OperationBriefingResult>;
+    const actions = Array.isArray(result.priorityActions)
+      ? result.priorityActions.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 3)
+      : fallback.priorityActions;
+
+    return {
+      weekKey: typeof result.weekKey === "string" && result.weekKey.trim() ? result.weekKey : fallback.weekKey,
+      executiveSummary:
+        typeof result.executiveSummary === "string" && result.executiveSummary.trim()
+          ? result.executiveSummary
+          : fallback.executiveSummary,
+      managerBriefing:
+        typeof result.managerBriefing === "string" && result.managerBriefing.trim()
+          ? result.managerBriefing
+          : fallback.managerBriefing,
+      priorityActions: actions.length ? actions : fallback.priorityActions,
+      riskFocus: typeof result.riskFocus === "string" && result.riskFocus.trim() ? result.riskFocus : fallback.riskFocus,
+      messageQueueAdvice:
+        typeof result.messageQueueAdvice === "string" && result.messageQueueAdvice.trim()
+          ? result.messageQueueAdvice
+          : fallback.messageQueueAdvice,
+      dataQualityNotes:
+        typeof result.dataQualityNotes === "string" && result.dataQualityNotes.trim()
+          ? result.dataQualityNotes
+          : fallback.dataQualityNotes,
+      isTemplate: !!result.isTemplate,
+      source: result.source === "gemma4" ? "gemma4" : "template",
+      createdAt: typeof result.createdAt === "string" && result.createdAt.trim() ? result.createdAt : fallback.createdAt
+    };
+  }
+
+  async function recordOperationBriefing(result: OperationBriefingResult, actionType: OperationActionType = "OPERATION_BRIEFING_GENERATED") {
+    const entry = createOperationBriefingEntry(result, operationBriefingSummary);
+    await saveOperationBriefing(entry, actionType);
+    return entry;
+  }
+
+  async function handleGenerateOperationBriefing() {
+    if (!selectedWeekKey || operationBriefingSummary.summaryStats.totalRiderCount === 0) {
+      setOperationBriefingError("운영본부 브리핑을 생성할 데이터가 없습니다.");
+      return;
+    }
+
+    setOperationBriefingLoading(true);
+    setOperationBriefingError("");
+
+    try {
+      const fallback = createTemplateOperationBriefing(selectedWeekKey, operationBriefingSummary);
+      const result = normalizeOperationBriefingResult(await generateOperationBriefing(operationBriefingSummary), fallback);
+      await recordOperationBriefing(result, latestOperationBriefing ? "OPERATION_BRIEFING_REGENERATED" : "OPERATION_BRIEFING_GENERATED");
+    } catch {
+      const fallback = createTemplateOperationBriefing(selectedWeekKey, operationBriefingSummary);
+      await recordOperationBriefing(fallback, latestOperationBriefing ? "OPERATION_BRIEFING_REGENERATED" : "OPERATION_BRIEFING_GENERATED");
+      setOperationBriefingError("AI 운영본부 API 연결 실패로 기본 템플릿을 저장했습니다.");
+    } finally {
+      setOperationBriefingLoading(false);
+    }
+  }
+
+  async function handleCopyOperationBriefing(kind: "executive" | "manager") {
+    if (!latestOperationBriefing) return;
+    const copyText =
+      kind === "executive"
+        ? formatExecutiveOperationBriefingText(latestOperationBriefing, operationBriefingSummary)
+        : formatManagerOperationBriefingText(latestOperationBriefing, operationBriefingSummary);
+    try {
+      await navigator.clipboard.writeText(copyText);
+      setOperationBriefingCopyStatus(kind === "executive" ? "대표 보고용 복사 완료" : "관리자 공유용 복사 완료");
+      setOperationBriefingCopyFailed(false);
+      setOperationBriefingManualText("");
+      await audit(kind === "executive" ? "EXECUTIVE_REPORT_COPIED" : "MANAGER_SHARE_COPIED", `${selectedWeekKey} ${kind === "executive" ? "대표 보고용" : "관리자 공유용"} 운영본부 브리핑 복사`, { weekKey: selectedWeekKey });
+    } catch {
+      setOperationBriefingCopyStatus("복사 실패");
+      setOperationBriefingCopyFailed(true);
+      setOperationBriefingManualText(copyText);
+    } finally {
+      window.setTimeout(() => setOperationBriefingCopyStatus(""), 1800);
+    }
+  }
+
+  function handlePriorityActionClick(action: string, index: number) {
+    if (action.includes("미발송") || action.includes("발송")) {
+      openAdminTopic("operation");
+    } else if (action.includes("데이터")) {
+      openAdminTopic("analysis");
+    } else {
+      openAdminTopic("riders");
+    }
+    void audit("PRIORITY_ACTION_VIEWED", `${selectedWeekKey} 우선 조치 ${index + 1} 확인: ${action}`, { weekKey: selectedWeekKey });
   }
 
   function getLocalHistoryFor(riderName: string, weekKey: string) {
@@ -1970,6 +2136,22 @@ export function AdminDashboard() {
         </div>
       </section>
 
+      <OperationBriefingPanel
+        weekKey={selectedWeekKey}
+        summary={operationBriefingSummary}
+        latestBriefing={latestOperationBriefing}
+        history={operationBriefingHistory}
+        loading={operationBriefingLoading}
+        copyStatus={operationBriefingCopyStatus}
+        copyFailed={operationBriefingCopyFailed}
+        manualCopyText={operationBriefingManualText}
+        errorMessage={operationBriefingError}
+        onGenerate={handleGenerateOperationBriefing}
+        onCopyExecutive={() => void handleCopyOperationBriefing("executive")}
+        onCopyManager={() => void handleCopyOperationBriefing("manager")}
+        onPriorityActionClick={handlePriorityActionClick}
+      />
+
       <OperationStorageStatus status={operationSaveStatus} detail={operationSaveDetail} />
       <AIStatusPanel
         onChecked={(status) => {
@@ -2636,6 +2818,7 @@ export function AdminDashboard() {
           aiCoachingHistory={localAICoachingHistory}
           managerActions={managerActionRecords}
           monthlyReports={localMonthlyReportHistory}
+          operationBriefings={localOperationBriefingHistory}
           messageQueue={messageQueueItems}
           messageSendHistory={messageSendHistory}
           operationLogs={operationLogs}

@@ -301,6 +301,136 @@ input {
   line-height: 1.45;
 }
 
+.operation-briefing-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.operation-title-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.operation-briefing-metrics,
+.priority-action-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.operation-briefing-metrics article,
+.priority-action-card,
+.operation-briefing-summary,
+.operation-briefing-detail-grid article {
+  border: 1px solid #dfe6f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.operation-briefing-metrics article {
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.operation-briefing-metrics span,
+.priority-action-card span,
+.operation-briefing-summary span,
+.operation-briefing-detail-grid span {
+  color: #65758a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.operation-briefing-metrics strong {
+  color: #17324d;
+  font-size: 22px;
+}
+
+.operation-briefing-metrics small {
+  color: #65758a;
+  line-height: 1.35;
+}
+
+.priority-action-card {
+  min-height: 96px;
+  padding: 14px;
+  text-align: left;
+  display: grid;
+  gap: 8px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.priority-action-card:hover {
+  border-color: rgba(21, 96, 130, 0.38);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.priority-action-card strong {
+  color: #17324d;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.operation-briefing-body {
+  display: grid;
+  gap: 12px;
+}
+
+.operation-briefing-summary {
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+}
+
+.operation-briefing-summary strong {
+  color: #17324d;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.operation-briefing-details {
+  border: 1px solid #dfe6f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.operation-briefing-details summary,
+.operation-briefing-history summary {
+  cursor: pointer;
+  font-weight: 900;
+  color: #17324d;
+}
+
+.operation-briefing-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.operation-briefing-detail-grid article {
+  padding: 12px;
+}
+
+.operation-briefing-detail-grid p {
+  margin: 6px 0 0;
+  color: #223044;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.operation-briefing-history {
+  border-top: 1px solid #dfe6f0;
+  padding-top: 10px;
+}
+
 .admin-quick-nav {
   position: sticky;
   top: var(--admin-quick-top);
@@ -1163,6 +1293,28 @@ input {
   .monthly-report-copy-button {
     width: 100%;
     min-height: 42px;
+  }
+  .operation-title-actions,
+  .operation-briefing-details summary,
+  .operation-briefing-history summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .operation-title-actions .ai-coaching-button,
+  .operation-briefing-body .copy-button {
+    width: 100%;
+    min-height: 42px;
+  }
+  .operation-briefing-metrics,
+  .priority-action-grid,
+  .operation-briefing-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .priority-action-card {
+    min-height: 84px;
+  }
+  .operation-briefing-summary strong {
+    font-size: 15px;
   }
   .monthly-report-list span {
     align-items: flex-start;

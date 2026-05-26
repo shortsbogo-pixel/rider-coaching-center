@@ -3,6 +3,7 @@ import type { LocalAICoachingHistoryEntry } from "../../types/aiCoaching";
 import type { MessageQueueItem, MessageSendHistoryEntry } from "../../types/messageQueue";
 import type { OperationActionType } from "../../types/operation";
 import type { OperationLogEntry } from "../../types/operation";
+import type { LocalOperationBriefingEntry } from "../../types/operationBriefing";
 import type { ManagerActionChecklistRecord } from "../../utils/managerActionChecklist";
 import type { LocalMonthlyReportEntry } from "../../utils/monthlyReportHistory";
 import { createAICoachingHistoryCsv, createManagerActionsCsv, downloadTextFile } from "../../utils/exportCsv";
@@ -12,6 +13,7 @@ interface OperationBackupPanelProps {
   aiCoachingHistory: LocalAICoachingHistoryEntry[];
   managerActions: ManagerActionChecklistRecord[];
   monthlyReports: LocalMonthlyReportEntry[];
+  operationBriefings: LocalOperationBriefingEntry[];
   messageQueue: MessageQueueItem[];
   messageSendHistory: MessageSendHistoryEntry[];
   operationLogs: OperationLogEntry[];
@@ -23,6 +25,7 @@ export function OperationBackupPanel({
   aiCoachingHistory,
   managerActions,
   monthlyReports,
+  operationBriefings,
   messageQueue,
   messageSendHistory,
   operationLogs,
@@ -46,6 +49,7 @@ export function OperationBackupPanel({
 
   function createBackupPayload() {
     return createOperationBackup(undefined, {
+      operationBriefings,
       messageQueue,
       messageSendHistory,
       operationLogs

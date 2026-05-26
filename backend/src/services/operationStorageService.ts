@@ -20,6 +20,7 @@ export function createOperationStorageService(rootDir?: string) {
   const managerActionChecklists = createJsonFileCollection<OperationStoredItem>("manager-action-checklists.json", rootDir);
   const weeklyBriefings = createJsonFileCollection<OperationStoredItem>("weekly-briefings.json", rootDir);
   const monthlyReports = createJsonFileCollection<OperationStoredItem>("monthly-reports.json", rootDir);
+  const operationBriefings = createJsonFileCollection<OperationStoredItem>("operation-briefings.json", rootDir);
   const messageCopyHistory = createJsonFileCollection<MessageCopyHistoryEntry>("message-copy-history.json", rootDir);
   const messageQueue = createJsonFileCollection<OperationStoredItem>("message-queue.json", rootDir);
   const messageSendHistory = createJsonFileCollection<OperationStoredItem>("message-send-history.json", rootDir);
@@ -32,6 +33,7 @@ export function createOperationStorageService(rootDir?: string) {
     managerActionChecklists,
     weeklyBriefings,
     monthlyReports,
+    operationBriefings,
     messageCopyHistory,
     messageQueue,
     messageSendHistory,

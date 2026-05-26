@@ -23,7 +23,18 @@ const filterOptions: Array<{ value: OperationLogFilter; label: string; actionTyp
     ]
   },
   { value: "checklist", label: "체크리스트", actionTypes: ["CHECKLIST_UPDATED"] },
-  { value: "briefing", label: "브리핑", actionTypes: ["WEEKLY_BRIEFING_GENERATED"] },
+  {
+    value: "briefing",
+    label: "브리핑",
+    actionTypes: [
+      "WEEKLY_BRIEFING_GENERATED",
+      "OPERATION_BRIEFING_GENERATED",
+      "OPERATION_BRIEFING_REGENERATED",
+      "EXECUTIVE_REPORT_COPIED",
+      "MANAGER_SHARE_COPIED",
+      "PRIORITY_ACTION_VIEWED"
+    ]
+  },
   { value: "report", label: "리포트", actionTypes: ["MONTHLY_REPORT_GENERATED"] },
   { value: "backup", label: "백업/복원", actionTypes: ["BACKUP_DOWNLOADED", "DATA_RESTORED", "CSV_EXPORTED", "LOCAL_DATA_MIGRATED"] }
 ];
@@ -39,6 +50,11 @@ function actionLabel(actionType: string) {
     MESSAGE_COPIED: "문구 복사",
     CHECKLIST_UPDATED: "체크리스트 변경",
     WEEKLY_BRIEFING_GENERATED: "주간 브리핑",
+    OPERATION_BRIEFING_GENERATED: "AI 운영본부 브리핑",
+    OPERATION_BRIEFING_REGENERATED: "AI 운영본부 재생성",
+    EXECUTIVE_REPORT_COPIED: "대표 보고용 복사",
+    MANAGER_SHARE_COPIED: "관리자 공유용 복사",
+    PRIORITY_ACTION_VIEWED: "우선 조치 확인",
     MONTHLY_REPORT_GENERATED: "월간 리포트",
     BACKUP_DOWNLOADED: "백업 다운로드",
     DATA_RESTORED: "데이터 복원",
