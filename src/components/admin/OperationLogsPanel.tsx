@@ -4,7 +4,23 @@ import { operationApi } from "../../utils/operationApi";
 
 const filterOptions: Array<{ value: OperationLogFilter; label: string; actionTypes?: string[] }> = [
   { value: "all", label: "전체" },
-  { value: "ai-coaching", label: "AI 코칭", actionTypes: ["AI_COACHING_GENERATED", "AI_COACHING_REGENERATED", "MESSAGE_COPIED", "AI_STATUS_CHECKED"] },
+  {
+    value: "ai-coaching",
+    label: "AI 코칭",
+    actionTypes: [
+      "AI_COACHING_GENERATED",
+      "AI_COACHING_REGENERATED",
+      "MESSAGE_COPIED",
+      "AI_STATUS_CHECKED",
+      "MESSAGE_QUEUE_ADDED",
+      "MESSAGE_QUEUE_KAKAO_COPIED",
+      "MESSAGE_QUEUE_SMS_COPIED",
+      "MESSAGE_SEND_COMPLETED",
+      "MESSAGE_QUEUE_HELD",
+      "MESSAGE_QUEUE_DELETED",
+      "MESSAGE_QUEUE_MEMO_UPDATED"
+    ]
+  },
   { value: "checklist", label: "체크리스트", actionTypes: ["CHECKLIST_UPDATED"] },
   { value: "briefing", label: "브리핑", actionTypes: ["WEEKLY_BRIEFING_GENERATED"] },
   { value: "report", label: "리포트", actionTypes: ["MONTHLY_REPORT_GENERATED"] },
@@ -27,7 +43,14 @@ function actionLabel(actionType: string) {
     DATA_RESTORED: "데이터 복원",
     CSV_EXPORTED: "CSV 내보내기",
     AI_STATUS_CHECKED: "AI 상태 점검",
-    LOCAL_DATA_MIGRATED: "로컬 데이터 이전"
+    LOCAL_DATA_MIGRATED: "로컬 데이터 이전",
+    MESSAGE_QUEUE_ADDED: "발송 대기함 추가",
+    MESSAGE_QUEUE_KAKAO_COPIED: "카톡 문구 복사",
+    MESSAGE_QUEUE_SMS_COPIED: "문자 문구 복사",
+    MESSAGE_SEND_COMPLETED: "발송완료 처리",
+    MESSAGE_QUEUE_HELD: "보류 처리",
+    MESSAGE_QUEUE_DELETED: "발송 대기 삭제",
+    MESSAGE_QUEUE_MEMO_UPDATED: "메모 수정"
   };
   return labels[actionType] ?? actionType;
 }

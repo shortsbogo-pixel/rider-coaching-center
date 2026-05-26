@@ -10,6 +10,7 @@ import { AIStatusPanel } from "../components/admin/AIStatusPanel";
 import { DataQualityWarningPanel } from "../components/admin/DataQualityWarningPanel";
 import { ManagerActionChecklist } from "../components/admin/ManagerActionChecklist";
 import { MessageCopyPanel } from "../components/admin/MessageCopyPanel";
+import { MessageQueuePanel } from "../components/admin/MessageQueuePanel";
 import { MonthlyOperationReportPanel } from "../components/admin/MonthlyOperationReport";
 import { OperationBackupPanel } from "../components/admin/OperationBackupPanel";
 import { OperationDataCheckPanel } from "../components/admin/OperationDataCheckPanel";
@@ -20,6 +21,7 @@ import { RiderAnalysisReasonPanel } from "../components/admin/RiderAnalysisReaso
 import { RiskBadge } from "../components/admin/RiskBadge";
 import { WeeklyAIBriefingPanel } from "../components/admin/WeeklyAIBriefingPanel";
 import type { UploadedWeekSummary } from "../types/newWeekBriefing";
+import type { MessageQueueItem, MessageSendChannel, MessageSendHistoryEntry } from "../types/messageQueue";
 import type { OrderRecord, TimeSegment } from "../types/order";
 import type { RiderGrade, RiderMetrics, RiderProfile, RiderRiskLevel } from "../types/rider";
 import type {
@@ -54,6 +56,18 @@ import { buildLunchMissionBrief, getUploadHealth, getWeakestAction } from "../ut
 import { readManagerActionChecklistRecords, saveManagerActionChecklist } from "../utils/managerActionChecklist";
 import type { ManagerActionChecklistRecord } from "../utils/managerActionChecklist";
 import { operationApi, writeOperationLog } from "../utils/operationApi";
+import { messageQueueApi } from "../utils/messageQueueApi";
+import {
+  createMessageQueueItem,
+  createSendHistoryEntry,
+  deleteMessageQueueItem,
+  hasDuplicateMessageQueueItem,
+  readMessageQueueItems,
+  readMessageSendHistoryEntries,
+  saveMessageQueueItem,
+  saveMessageSendHistoryEntry,
+  updateMessageQueueItem
+} from "../utils/messageQueueStorage";
 import { buildOperationDataCheckItems } from "../utils/operationDataValidator";
 import {
   buildAICoachingAnalysisContext,
@@ -578,6 +592,9 @@ export function AdminDashboard() {
   const [operationSaveStatus, setOperationSaveStatus] = useState<OperationSaveStatus>("server");
   const [operationSaveDetail, setOperationSaveDetail] = useState("서버 저장을 우선 사용합니다.");
   const [operationLogRevision, setOperationLogRevision] = useState(0);
+  const [messageQueueItems, setMessageQueueItems] = useState<MessageQueueItem[]>(() => readMessageQueueItems());
+  const [messageSendHistory, setMessageSendHistory] = useState<MessageSendHistoryEntry[]>(() => readMessageSendHistoryEntries());
+  const [messageQueueStatusByKey, setMessageQueueStatusByKey] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetch("/api/uploads")
@@ -603,10 +620,12 @@ export function AdminDashboard() {
   useEffect(() => {
     let mounted = true;
     async function loadOperationData() {
-      const [historyResult, weeklyBriefingsResult, monthlyReportsResult] = await Promise.allSettled([
+      const [historyResult, weeklyBriefingsResult, monthlyReportsResult, messageQueueResult, messageSendHistoryResult] = await Promise.allSettled([
         operationApi.getAICoachingHistory(),
         operationApi.getWeeklyBriefings(),
-        operationApi.getMonthlyReports()
+        operationApi.getMonthlyReports(),
+        messageQueueApi.getQueue(),
+        messageQueueApi.getSendHistory()
       ]);
       if (!mounted) return;
 
@@ -628,7 +647,19 @@ export function AdminDashboard() {
         refreshLocalMonthlyReportHistory();
       }
 
-      const hasServerLoadFailure = [historyResult, weeklyBriefingsResult, monthlyReportsResult].some((result) => result.status === "rejected");
+      if (messageQueueResult.status === "fulfilled") {
+        setMessageQueueItems(messageQueueResult.value);
+      } else {
+        setMessageQueueItems(readMessageQueueItems());
+      }
+
+      if (messageSendHistoryResult.status === "fulfilled") {
+        setMessageSendHistory(messageSendHistoryResult.value);
+      } else {
+        setMessageSendHistory(readMessageSendHistoryEntries());
+      }
+
+      const hasServerLoadFailure = [historyResult, weeklyBriefingsResult, monthlyReportsResult, messageQueueResult, messageSendHistoryResult].some((result) => result.status === "rejected");
       if (hasServerLoadFailure) {
         setOperationSaveStatus("local");
         setOperationSaveDetail("일부 서버 조회 실패로 로컬 임시 데이터를 함께 사용합니다.");
@@ -931,10 +962,20 @@ export function AdminDashboard() {
     setLocalMonthlyReportHistory(readMonthlyReportEntries());
   }
 
+  function refreshLocalMessageQueue() {
+    setMessageQueueItems(readMessageQueueItems());
+  }
+
+  function refreshLocalMessageSendHistory() {
+    setMessageSendHistory(readMessageSendHistoryEntries());
+  }
+
   function refreshOperationDataAfterRestore() {
     refreshLocalAICoachingHistory();
     refreshLocalWeeklyBriefingHistory();
     refreshLocalMonthlyReportHistory();
+    refreshLocalMessageQueue();
+    refreshLocalMessageSendHistory();
     setManagerActionRevision((value) => value + 1);
   }
 
@@ -1388,6 +1429,169 @@ export function AdminDashboard() {
     } catch {
       // noop: clipboard may fail in some environments
     }
+  }
+
+  function setMessageQueueStatus(key: string, message: string) {
+    setMessageQueueStatusByKey((current) => ({ ...current, [key]: message }));
+    window.setTimeout(() => {
+      setMessageQueueStatusByKey((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+    }, 2200);
+  }
+
+  async function persistMessageQueueItem(item: MessageQueueItem) {
+    try {
+      await messageQueueApi.saveQueueItem(item);
+      saveMessageQueueItem(item);
+      setMessageQueueItems((current) => [...current.filter((entry) => entry.id !== item.id), item]);
+      setSaveStatus("server", "발송 대기함을 서버에 저장했습니다.");
+      return true;
+    } catch {
+      const saved = saveMessageQueueItem(item);
+      if (saved) {
+        refreshLocalMessageQueue();
+        setSaveStatus("local", "서버 저장 실패로 발송 대기함을 로컬에 임시 저장했습니다.");
+        return true;
+      }
+      setMessageQueueItems((current) => [...current.filter((entry) => entry.id !== item.id), item]);
+      setSaveStatus("failed", "발송 대기함 저장에 실패했습니다.");
+      return false;
+    }
+  }
+
+  async function persistMessageQueueUpdate(item: MessageQueueItem) {
+    try {
+      await messageQueueApi.updateQueueItem(item);
+      updateMessageQueueItem(item);
+      setMessageQueueItems((current) => [...current.filter((entry) => entry.id !== item.id), item]);
+      setSaveStatus("server", "발송 대기함 변경사항을 서버에 저장했습니다.");
+      return true;
+    } catch {
+      const saved = updateMessageQueueItem(item);
+      if (saved) {
+        refreshLocalMessageQueue();
+        setSaveStatus("local", "서버 저장 실패로 발송 대기함 변경사항을 로컬에 임시 저장했습니다.");
+        return true;
+      }
+      setMessageQueueItems((current) => [...current.filter((entry) => entry.id !== item.id), item]);
+      setSaveStatus("failed", "발송 대기함 변경사항 저장에 실패했습니다.");
+      return false;
+    }
+  }
+
+  async function persistMessageQueueDelete(item: MessageQueueItem) {
+    try {
+      await messageQueueApi.deleteQueueItem(item.id);
+      deleteMessageQueueItem(item.id);
+      setMessageQueueItems((current) => current.filter((entry) => entry.id !== item.id));
+      setSaveStatus("server", "발송 대기 항목을 서버에서 삭제했습니다.");
+      return true;
+    } catch {
+      const saved = deleteMessageQueueItem(item.id);
+      if (saved) {
+        refreshLocalMessageQueue();
+        setSaveStatus("local", "서버 삭제 실패로 발송 대기 항목을 로컬에서만 삭제했습니다.");
+        return true;
+      }
+      setSaveStatus("failed", "발송 대기 항목 삭제에 실패했습니다.");
+      return false;
+    }
+  }
+
+  async function persistMessageSendHistory(entry: MessageSendHistoryEntry) {
+    try {
+      await messageQueueApi.saveSendHistory(entry);
+      saveMessageSendHistoryEntry(entry);
+      setMessageSendHistory((current) => [...current.filter((item) => item.id !== entry.id), entry]);
+      return true;
+    } catch {
+      const saved = saveMessageSendHistoryEntry(entry);
+      if (saved) {
+        refreshLocalMessageSendHistory();
+        return true;
+      }
+      setMessageSendHistory((current) => [...current.filter((item) => item.id !== entry.id), entry]);
+      return false;
+    }
+  }
+
+  async function handleAddMessageQueueItem(input: {
+    key: string;
+    riderName: string;
+    weekKey: string;
+    riskLevel: RiderRiskLevel;
+    trendLabel?: MessageQueueItem["trendLabel"];
+    adminMessage: string;
+    riderMessage: string;
+    currentWeekCompleted: number;
+    changeRate: number;
+  }) {
+    const candidate = createMessageQueueItem(input);
+    if (hasDuplicateMessageQueueItem(messageQueueItems, candidate)) {
+      setMessageQueueStatus(input.key, "이미 발송 대기함에 있는 문구입니다.");
+      return;
+    }
+
+    await persistMessageQueueItem(candidate);
+    setMessageQueueStatus(input.key, "발송 대기함 추가 완료");
+    await audit("MESSAGE_QUEUE_ADDED", `${input.riderName} 발송 대기함 추가`, { riderName: input.riderName, weekKey: input.weekKey });
+  }
+
+  async function handleMessageQueueCopy(item: MessageQueueItem, copyType: "kakao" | "sms") {
+    const updatedAt = new Date().toISOString();
+    const updated: MessageQueueItem = {
+      ...item,
+      sendStatus: "복사완료",
+      sendChannel: copyType === "kakao" ? "카톡" : "문자",
+      updatedAt
+    };
+    await persistMessageQueueUpdate(updated);
+    await audit(copyType === "kakao" ? "MESSAGE_QUEUE_KAKAO_COPIED" : "MESSAGE_QUEUE_SMS_COPIED", `${item.riderName} ${copyType === "kakao" ? "카톡" : "문자"} 문구 복사`, {
+      riderName: item.riderName,
+      weekKey: item.weekKey
+    });
+  }
+
+  async function handleMessageQueueUpdate(item: MessageQueueItem) {
+    await persistMessageQueueUpdate(item);
+    await audit("MESSAGE_QUEUE_MEMO_UPDATED", `${item.riderName} 발송 대기함 메모/채널 수정`, { riderName: item.riderName, weekKey: item.weekKey });
+  }
+
+  async function handleMessageQueueHold(item: MessageQueueItem) {
+    const updated = { ...item, sendStatus: "보류" as const, updatedAt: new Date().toISOString() };
+    await persistMessageQueueUpdate(updated);
+    await audit("MESSAGE_QUEUE_HELD", `${item.riderName} 발송 보류 처리`, { riderName: item.riderName, weekKey: item.weekKey });
+  }
+
+  async function handleMessageQueueDelete(item: MessageQueueItem) {
+    await persistMessageQueueDelete(item);
+    await audit("MESSAGE_QUEUE_DELETED", `${item.riderName} 발송 대기 항목 삭제`, { riderName: item.riderName, weekKey: item.weekKey });
+  }
+
+  async function handleMessageQueueSent(item: MessageQueueItem, sentMessage: string) {
+    const sentAt = new Date().toISOString();
+    const sentBy = "관리자";
+    const updated: MessageQueueItem = {
+      ...item,
+      sendStatus: "발송완료",
+      sentAt,
+      sentBy,
+      updatedAt: sentAt
+    };
+    const history = createSendHistoryEntry(updated, {
+      sendChannel: updated.sendChannel as MessageSendChannel,
+      sentMessage,
+      sentAt,
+      sentBy,
+      memo: updated.memo
+    });
+
+    await persistMessageQueueUpdate(updated);
+    await persistMessageSendHistory(history);
+    await audit("MESSAGE_SEND_COMPLETED", `${item.riderName} ${updated.sendChannel} 발송완료 처리`, { riderName: item.riderName, weekKey: item.weekKey });
   }
 
   async function handleGenerateMonthlyOperationReport() {
@@ -1931,6 +2135,30 @@ export function AdminDashboard() {
                           void audit("MESSAGE_COPIED", `${riderName} ${copyType === "kakao" ? "카톡용" : "문자용"} 문구 복사`, { riderName, weekKey });
                         }}
                       />
+                      {cardRiderName ? (
+                        <div className="message-queue-add-row">
+                          <button
+                            className="ai-coaching-button small"
+                            type="button"
+                            onClick={() =>
+                              handleAddMessageQueueItem({
+                                key: card.id,
+                                riderName: cardRiderName,
+                                weekKey: selectedWeekKey,
+                                riskLevel: normalizeRiskLevel(card.riskLevel ?? "주의"),
+                                trendLabel: cardTrendAnalysis?.trendLabel,
+                                adminMessage: visibleAiResult.adminMessage,
+                                riderMessage: visibleAiResult.riderMessage,
+                                currentWeekCompleted: card.currentCompleted ?? 0,
+                                changeRate: card.changeRatePercent ?? 0
+                              })
+                            }
+                          >
+                            발송 대기함에 추가
+                          </button>
+                          {messageQueueStatusByKey[card.id] ? <span className="copy-toast">{messageQueueStatusByKey[card.id]}</span> : null}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}
@@ -1965,6 +2193,14 @@ export function AdminDashboard() {
             <small>{adminTopicLabels.operation.caption}</small>
           </summary>
           <div className="dashboard-topic-body">
+            <MessageQueuePanel
+              items={messageQueueItems}
+              onCopy={handleMessageQueueCopy}
+              onMarkSent={handleMessageQueueSent}
+              onHold={handleMessageQueueHold}
+              onUpdate={handleMessageQueueUpdate}
+              onDelete={handleMessageQueueDelete}
+            />
 
       {latestUpload ? (
         <section className="panel briefing-panel">
@@ -2307,6 +2543,30 @@ export function AdminDashboard() {
                     onSaved={() => setManagerActionRevision((value) => value + 1)}
                     onSaveRecord={saveChecklistRecord}
                   />
+                  {visibleAiResult ? (
+                    <div className="message-queue-add-row compact">
+                      <button
+                        className="ai-coaching-button small"
+                        type="button"
+                        onClick={() =>
+                          handleAddMessageQueueItem({
+                            key: riderAiKey,
+                            riderName: metric.displayName,
+                            weekKey: selectedWeekKey,
+                            riskLevel: metric.riskLevel,
+                            trendLabel: trendAnalysis.trendLabel,
+                            adminMessage: visibleAiResult.adminMessage,
+                            riderMessage: visibleAiResult.riderMessage,
+                            currentWeekCompleted: metric.totalCompleted,
+                            changeRate: changeRateForAI
+                          })
+                        }
+                      >
+                        발송 대기함에 추가
+                      </button>
+                      {messageQueueStatusByKey[riderAiKey] ? <span className="copy-toast">{messageQueueStatusByKey[riderAiKey]}</span> : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </article>

@@ -37,6 +37,10 @@ function withId(value: unknown, prefix: string): OperationStoredItem {
   };
 }
 
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
 function postCollection(collection: { save: (item: OperationStoredItem) => Promise<OperationStoredItem>; saveMany: (items: OperationStoredItem[]) => Promise<OperationStoredItem[]> }, prefix: string) {
   return async (req: Request, res: Response) => {
     try {
@@ -45,6 +49,38 @@ function postCollection(collection: { save: (item: OperationStoredItem) => Promi
       const items = payload.map((item) => withId(item, prefix));
       const saved = items.length === 1 ? [await collection.save(items[0])] : await collection.saveMany(items);
       ok(res, items.length === 1 ? saved[0] : saved, "saved");
+    } catch (error) {
+      fail(res, error);
+    }
+  };
+}
+
+function putCollection(collection: { getAll: () => Promise<OperationStoredItem[]>; save: (item: OperationStoredItem) => Promise<OperationStoredItem> }) {
+  return async (req: Request, res: Response) => {
+    try {
+      const id = decodeURIComponent(firstParam(req.params.id)).trim();
+      if (!id) {
+        res.status(400).json({ success: false, data: null, message: "id is required" });
+        return;
+      }
+      const current = (await collection.getAll()).find((item) => item.id === id);
+      const incoming = withId({ ...(isRecord(current) ? current : {}), ...(isRecord(req.body) ? req.body : {}), id }, id);
+      ok(res, await collection.save(incoming), "saved");
+    } catch (error) {
+      fail(res, error);
+    }
+  };
+}
+
+function deleteCollection(collection: { delete: (id: string) => Promise<boolean> }) {
+  return async (req: Request, res: Response) => {
+    try {
+      const id = decodeURIComponent(firstParam(req.params.id)).trim();
+      if (!id) {
+        res.status(400).json({ success: false, data: null, message: "id is required" });
+        return;
+      }
+      ok(res, { deleted: await collection.delete(id) }, "deleted");
     } catch (error) {
       fail(res, error);
     }
@@ -139,6 +175,28 @@ router.get("/message-copy-history", async (_req, res) => {
 });
 
 router.post("/message-copy-history", postCollection(operationStorageService.messageCopyHistory, "message-copy"));
+
+router.get("/message-queue", async (_req, res) => {
+  try {
+    ok(res, await operationStorageService.messageQueue.getAll());
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.post("/message-queue", postCollection(operationStorageService.messageQueue, "message-queue"));
+router.put("/message-queue/:id", putCollection(operationStorageService.messageQueue));
+router.delete("/message-queue/:id", deleteCollection(operationStorageService.messageQueue));
+
+router.get("/message-send-history", async (_req, res) => {
+  try {
+    ok(res, await operationStorageService.messageSendHistory.getAll());
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.post("/message-send-history", postCollection(operationStorageService.messageSendHistory, "message-send-history"));
 
 router.post("/backup-meta", postCollection(operationStorageService.backupMeta, "backup-meta"));
 router.post("/ai-status-results", postCollection(operationStorageService.aiStatusChecks, "ai-status"));

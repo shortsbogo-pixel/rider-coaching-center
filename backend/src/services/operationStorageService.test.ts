@@ -71,3 +71,31 @@ test("operation logs are returned newest first", async () => {
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+test("operation storage supports message queue and send history collections", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "operation-storage-"));
+  try {
+    const service = createOperationStorageService(rootDir);
+
+    await service.messageQueue.save({
+      id: "queue-1",
+      riderName: "Test Rider",
+      weekKey: "2026-W21",
+      sendStatus: "대기",
+      createdAt: "2026-05-26T00:00:00.000Z"
+    });
+    await service.messageSendHistory.save({
+      id: "history-1",
+      queueId: "queue-1",
+      riderName: "Test Rider",
+      sentAt: "2026-05-26T01:00:00.000Z"
+    });
+
+    assert.equal((await service.messageQueue.getAll()).length, 1);
+    assert.equal((await service.messageSendHistory.getAll()).length, 1);
+    assert.equal(await service.messageQueue.delete("queue-1"), true);
+    assert.deepEqual(await service.messageQueue.getAll(), []);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});

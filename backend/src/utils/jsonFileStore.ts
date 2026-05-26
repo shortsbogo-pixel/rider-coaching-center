@@ -55,6 +55,12 @@ export function createJsonFileCollection<T extends { id: string }>(fileName: str
       const incomingIds = new Set(items.map((item) => item.id));
       await writeJsonArrayQueued(filePath, [...current.filter((item) => !incomingIds.has(item.id)), ...items]);
       return items;
+    },
+    async delete(id: string) {
+      const current = await readJsonArraySafe<T>(filePath);
+      const next = current.filter((item) => item.id !== id);
+      await writeJsonArrayQueued(filePath, next);
+      return next.length !== current.length;
     }
   };
 }
