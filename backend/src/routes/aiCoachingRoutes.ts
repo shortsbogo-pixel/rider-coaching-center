@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
-import { generateAICoachingMessages, getDefaultCoachingMessages } from "../services/aiCoachingService";
+import { checkOllamaStatus, generateAICoachingMessages, getDefaultCoachingMessages } from "../services/aiCoachingService";
 import { saveAICoachingHistory, getAICoachingHistory } from "../services/aiCoachingHistoryService";
 import { generateMonthlyOperationReport } from "../services/monthlyReportService";
 import { generateWeeklyAIBriefing } from "../services/weeklyBriefingService";
@@ -16,6 +16,15 @@ router.use((req, res, next) => {
     return;
   }
   next();
+});
+
+// GET /api/ai-coaching/status - Ollama / Gemma 4 상태 점검
+router.get("/status", async (req: Request, res: Response, next) => {
+  try {
+    res.json(await checkOllamaStatus());
+  } catch (error) {
+    next(error);
+  }
 });
 
 interface GenerateCoachingRequest {

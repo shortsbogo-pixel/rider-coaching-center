@@ -6,9 +6,12 @@ import { MetricCard } from "../components/common/MetricCard";
 import { RequiredColumnHealth } from "../components/common/RequiredColumnHealth";
 import { SectionHeader } from "../components/common/SectionHeader";
 import { AICoachingHistoryPanel } from "../components/admin/AICoachingHistoryPanel";
+import { AIStatusPanel } from "../components/admin/AIStatusPanel";
 import { ManagerActionChecklist } from "../components/admin/ManagerActionChecklist";
 import { MessageCopyPanel } from "../components/admin/MessageCopyPanel";
 import { MonthlyOperationReportPanel } from "../components/admin/MonthlyOperationReport";
+import { OperationBackupPanel } from "../components/admin/OperationBackupPanel";
+import { OperationDataCheckPanel } from "../components/admin/OperationDataCheckPanel";
 import { RiskBadge } from "../components/admin/RiskBadge";
 import { WeeklyAIBriefingPanel } from "../components/admin/WeeklyAIBriefingPanel";
 import type { UploadedWeekSummary } from "../types/newWeekBriefing";
@@ -43,6 +46,7 @@ import {
 } from "../utils/monthlyReportHistory";
 import { buildLunchMissionBrief, getUploadHealth, getWeakestAction } from "../utils/newWeekBriefingAnalyzer";
 import { readManagerActionChecklistRecords } from "../utils/managerActionChecklist";
+import { buildOperationDataCheckItems } from "../utils/operationDataValidator";
 import { buildRiderMetrics, getGradeLabel } from "../utils/scoring";
 import { buildWeeklyBriefingSummary, createTemplateWeeklyAIBriefing } from "../utils/weeklyBriefingSummary";
 import {
@@ -757,6 +761,18 @@ export function AdminDashboard() {
     .filter((entry) => entry.monthKey.trim() === monthlyOperationReportSummary.monthKey)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const monthlyOperationReport = monthlyReportHistory[0];
+  const operationDataCheckItems = buildOperationDataCheckItems({
+    currentRiderCount: currentMetrics.length,
+    aiCoachingHistory: localAICoachingHistory,
+    managerActions: managerActionRecords,
+    weeklyBriefings: localWeeklyBriefingHistory,
+    monthlyReports: localMonthlyReportHistory,
+    hasLocalStorageData:
+      localAICoachingHistory.length > 0 ||
+      managerActionRecords.length > 0 ||
+      localWeeklyBriefingHistory.length > 0 ||
+      localMonthlyReportHistory.length > 0
+  });
 
   const [aiLoadingById, setAiLoadingById] = useState<Record<string, boolean>>({});
   const [aiResultById, setAiResultById] = useState<Record<string, AICoachingResultState>>({});
@@ -809,6 +825,13 @@ export function AdminDashboard() {
 
   function refreshLocalMonthlyReportHistory() {
     setLocalMonthlyReportHistory(readMonthlyReportEntries());
+  }
+
+  function refreshOperationDataAfterRestore() {
+    refreshLocalAICoachingHistory();
+    refreshLocalWeeklyBriefingHistory();
+    refreshLocalMonthlyReportHistory();
+    setManagerActionRevision((value) => value + 1);
   }
 
   function buildCurrentWeeklyAIBriefingSummary(coachingHistory = localAICoachingHistory) {
@@ -1454,6 +1477,15 @@ export function AdminDashboard() {
         </label>
         <p>브리핑의 라이더 카드와 위험도 요약 리스트에만 적용됩니다.</p>
       </section>
+
+      <AIStatusPanel />
+      <OperationDataCheckPanel items={operationDataCheckItems} />
+      <OperationBackupPanel
+        aiCoachingHistory={localAICoachingHistory}
+        managerActions={managerActionRecords}
+        monthlyReports={localMonthlyReportHistory}
+        onRestored={refreshOperationDataAfterRestore}
+      />
 
       <div className="dashboard-topic-list">
         <details className="dashboard-topic" id="admin-topic-briefing" open={openAdminTopics.briefing}>

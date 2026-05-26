@@ -17,6 +17,15 @@ interface AICoachingOutput {
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:e2b";
 
+export interface OllamaStatusResult {
+  ollamaConnected: boolean;
+  model: string;
+  gemmaResponding: boolean;
+  checkedAt: string;
+  fallbackUsed: boolean;
+  message: string;
+}
+
 // 기본 템플릿 메시지 생성
 function getTemplateMessages(input: AICoachingInput): AICoachingOutput {
   const { riderName, previousWeekCompleted, currentWeekCompleted, changeRate, riskLevel } = input;
@@ -205,4 +214,57 @@ export async function generateAICoachingMessages(input: AICoachingInput): Promis
 // 테스트용: 기본 템플릿만 반환
 export function getDefaultCoachingMessages(input: AICoachingInput): AICoachingOutput {
   return getTemplateMessages(input);
+}
+
+export async function checkOllamaStatus(): Promise<OllamaStatusResult> {
+  const checkedAt = new Date().toISOString();
+  const controller = new AbortController();
+  const timeoutMs = Number(process.env.OLLAMA_STATUS_TIMEOUT_MS ?? 2500);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        prompt: "Reply with OK only.",
+        stream: false,
+        temperature: 0,
+        num_predict: 8
+      }),
+      signal: controller.signal
+    }).finally(() => clearTimeout(timeout));
+
+    if (!response.ok) {
+      return {
+        ollamaConnected: true,
+        model: OLLAMA_MODEL,
+        gemmaResponding: false,
+        checkedAt,
+        fallbackUsed: true,
+        message: `Ollama responded with status ${response.status}`
+      };
+    }
+
+    const data = (await response.json()) as { response?: string };
+    return {
+      ollamaConnected: true,
+      model: OLLAMA_MODEL,
+      gemmaResponding: typeof data.response === "string" && data.response.trim().length > 0,
+      checkedAt,
+      fallbackUsed: !(typeof data.response === "string" && data.response.trim().length > 0),
+      message: typeof data.response === "string" && data.response.trim().length > 0 ? "Gemma 4 연결 정상" : "Gemma 4 응답이 비어 있습니다."
+    };
+  } catch (error) {
+    clearTimeout(timeout);
+    return {
+      ollamaConnected: false,
+      model: OLLAMA_MODEL,
+      gemmaResponding: false,
+      checkedAt,
+      fallbackUsed: true,
+      message: error instanceof Error ? error.message : "Ollama status check failed"
+    };
+  }
 }

@@ -1103,6 +1103,17 @@ input {
   .message-copy-buttons .copy-button {
     width: 100%;
   }
+  .operation-panel-title,
+  .operation-restore-row {
+    grid-template-columns: 1fr;
+  }
+  .operation-panel-title {
+    flex-direction: column;
+  }
+  .operation-status-grid,
+  .operation-check-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .batch-action-row {
@@ -1650,6 +1661,140 @@ input {
   font: inherit;
   line-height: 1.5;
   resize: vertical;
+}
+
+.ai-status-panel,
+.operation-data-check-panel,
+.operation-backup-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.operation-panel-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.operation-panel-title h3 {
+  margin: 0 0 4px;
+}
+
+.operation-panel-title p {
+  margin: 0;
+  color: #65758a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.operation-status-grid,
+.operation-check-grid,
+.operation-button-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.operation-status-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.operation-check-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.operation-button-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+}
+
+.operation-status-card,
+.operation-check-card {
+  display: grid;
+  gap: 7px;
+  min-height: 106px;
+  padding: 12px;
+  border: 1px solid #dfe6f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.operation-status-card.good,
+.operation-check-card.good {
+  border-color: #b7e8d5;
+  background: #f2fcf8;
+}
+
+.operation-status-card.warning,
+.operation-check-card.warning {
+  border-color: #f4d184;
+  background: #fff9eb;
+}
+
+.operation-status-card span,
+.operation-check-card span {
+  color: #65758a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.operation-status-card strong,
+.operation-check-card strong {
+  color: #17324d;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.operation-status-card em,
+.operation-check-card p {
+  margin: 0;
+  color: #405166;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.operation-check-card > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.operation-check-card .status-pill {
+  flex: 0 0 auto;
+}
+
+.operation-restore-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.operation-file-input {
+  display: grid;
+  gap: 6px;
+  color: #26374a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.operation-file-input input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #d9e3ef;
+  border-radius: 8px;
+  padding: 8px;
+  background: #ffffff;
+  color: #405166;
+}
+
+.operation-error-message {
+  margin: 0;
+  color: #a12b1f;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .weekly-briefing-card {
