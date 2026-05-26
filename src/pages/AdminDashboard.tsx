@@ -5,14 +5,51 @@ import riders from "../data/sampleRiders.json";
 import { MetricCard } from "../components/common/MetricCard";
 import { RequiredColumnHealth } from "../components/common/RequiredColumnHealth";
 import { SectionHeader } from "../components/common/SectionHeader";
+import { AICoachingHistoryPanel } from "../components/admin/AICoachingHistoryPanel";
+import { ManagerActionChecklist } from "../components/admin/ManagerActionChecklist";
+import { MessageCopyPanel } from "../components/admin/MessageCopyPanel";
+import { MonthlyOperationReportPanel } from "../components/admin/MonthlyOperationReport";
 import { RiskBadge } from "../components/admin/RiskBadge";
+import { WeeklyAIBriefingPanel } from "../components/admin/WeeklyAIBriefingPanel";
 import type { UploadedWeekSummary } from "../types/newWeekBriefing";
 import type { OrderRecord, TimeSegment } from "../types/order";
 import type { RiderGrade, RiderMetrics, RiderProfile, RiderRiskLevel } from "../types/rider";
-import type { AICoachingHistoryEntry } from "../types/aiCoaching";
+import type {
+  AICoachingHistoryEntry,
+  AICoachingSource,
+  LocalAICoachingHistoryEntry,
+  LocalWeeklyAIBriefingEntry,
+  WeeklyAIBriefingResult
+} from "../types/aiCoaching";
 import { getAuthHeader } from "../utils/authStore";
+import {
+  createAICoachingHistoryEntry,
+  getLatestAICoachingHistoryForRiderWeek,
+  readAICoachingHistoryEntries,
+  saveAICoachingHistoryEntry
+} from "../utils/aiCoachingHistory";
+import { sortAdminRiderItems, type AdminRiderSortOption } from "../utils/adminRiderSort";
+import {
+  buildMonthlyOperationReportSummary,
+  createTemplateMonthlyOperationReport,
+  formatMonthlyOperationReportText,
+  type MonthlyOperationReport
+} from "../utils/monthlyOperationReport";
+import {
+  createMonthlyReportEntry,
+  readMonthlyReportEntries,
+  saveMonthlyReportEntry,
+  type LocalMonthlyReportEntry
+} from "../utils/monthlyReportHistory";
 import { buildLunchMissionBrief, getUploadHealth, getWeakestAction } from "../utils/newWeekBriefingAnalyzer";
+import { readManagerActionChecklistRecords } from "../utils/managerActionChecklist";
 import { buildRiderMetrics, getGradeLabel } from "../utils/scoring";
+import { buildWeeklyBriefingSummary, createTemplateWeeklyAIBriefing } from "../utils/weeklyBriefingSummary";
+import {
+  createWeeklyAIBriefingEntry,
+  readWeeklyAIBriefingEntries,
+  saveWeeklyAIBriefingEntry
+} from "../utils/weeklyBriefingHistory";
 import { getLatestWeekKey, sortWeekKeys } from "../utils/weekSelector";
 
 const fallbackMetrics = buildRiderMetrics(orders as OrderRecord[], riders as RiderProfile[]);
@@ -48,6 +85,19 @@ interface ThresholdLog {
   opportunityThreshold: number;
 }
 
+interface AICoachingResultState {
+  adminMessage: string;
+  riderMessage: string;
+  isTemplate: boolean;
+  source?: AICoachingSource;
+  createdAt?: string;
+}
+
+interface AICopyStatusState {
+  adminCopied?: boolean;
+  riderCopied?: boolean;
+}
+
 type AdminTopicId = "briefing" | "operation" | "analysis" | "riders";
 type AdminTopicState = Record<AdminTopicId, boolean>;
 
@@ -58,6 +108,14 @@ const adminTopicLabels: Record<AdminTopicId, { label: string; shortLabel: string
   analysis: { label: "누적·등급·구간 분석", shortLabel: "분석", caption: "보조 지표" },
   riders: { label: "라이더 위험도 요약", shortLabel: "라이더", caption: "급변화 라이더" }
 };
+
+const riderSortOptions: Array<{ value: AdminRiderSortOption; label: string }> = [
+  { value: "risk-first", label: "고위험 우선" },
+  { value: "decline-first", label: "하락폭 큰 순" },
+  { value: "low-completed", label: "완료건수 낮은 순" },
+  { value: "recent-ai", label: "최근 AI 코칭 생성순" },
+  { value: "default", label: "기본 순서" }
+];
 
 function createAdminTopicState(openTopic: AdminTopicId = "briefing"): AdminTopicState {
   return adminTopicIds.reduce(
@@ -82,6 +140,11 @@ function createClosedAdminTopicState(): AdminTopicState {
 function getInitialCompactAdminLayout() {
   if (typeof window === "undefined") return true;
   return window.matchMedia("(max-width: 759px)").matches;
+}
+
+function getCurrentMonthKey() {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function formatDateTime(value?: string) {
@@ -472,6 +535,15 @@ export function AdminDashboard() {
   const [thresholdLogs, setThresholdLogs] = useState<ThresholdLog[]>(loadThresholdLogs);
   const [isCompactAdminLayout, setIsCompactAdminLayout] = useState(getInitialCompactAdminLayout);
   const [openAdminTopics, setOpenAdminTopics] = useState<AdminTopicState>(() => createClosedAdminTopicState());
+  const [riderSortOption, setRiderSortOption] = useState<AdminRiderSortOption>("risk-first");
+  const [localAICoachingHistory, setLocalAICoachingHistory] = useState<LocalAICoachingHistoryEntry[]>(() => readAICoachingHistoryEntries());
+  const [localWeeklyBriefingHistory, setLocalWeeklyBriefingHistory] = useState<LocalWeeklyAIBriefingEntry[]>(() => readWeeklyAIBriefingEntries());
+  const [weeklyBriefingLoading, setWeeklyBriefingLoading] = useState(false);
+  const [weeklyBriefingError, setWeeklyBriefingError] = useState("");
+  const [weeklyBriefingCopyStatus, setWeeklyBriefingCopyStatus] = useState("");
+  const [managerActionRevision, setManagerActionRevision] = useState(0);
+  const [operationMemo, setOperationMemo] = useState("");
+  const [monthlyReportCopyStatus, setMonthlyReportCopyStatus] = useState("");
 
   useEffect(() => {
     fetch("/api/uploads")
@@ -537,14 +609,16 @@ export function AdminDashboard() {
 
   useEffect(() => {
     if (!selectedWeekKey) return;
-    fetch(`/api/ai-coaching/history?weekKey=${encodeURIComponent(selectedWeekKey)}`)
+    fetch(`/api/ai-coaching/history?weekKey=${encodeURIComponent(selectedWeekKey)}`, { headers: getAuthHeader() })
       .then((response) => response.ok ? response.json() : [])
-      .then((history: Array<{ riderId: string; adminMessage: string; riderMessage: string; isTemplate: boolean }>) => {
-        const restored = history.reduce<Record<string, { adminMessage: string; riderMessage: string; isTemplate: boolean }>>((acc, item) => {
+      .then((history: AICoachingHistoryEntry[]) => {
+        const restored = history.reduce<Record<string, AICoachingResultState>>((acc, item) => {
           acc[`rider-${item.riderId}`] = {
             adminMessage: item.adminMessage,
             riderMessage: item.riderMessage,
-            isTemplate: item.isTemplate
+            isTemplate: item.isTemplate,
+            source: item.isTemplate ? "template" : "gemma4",
+            createdAt: item.generatedAt
           };
           return acc;
         }, {});
@@ -607,25 +681,77 @@ export function AdminDashboard() {
     gradeOrder.map((grade) => [grade, currentMetrics.filter((metric) => metric.riderGrade === grade).length])
   ) as Record<RiderGrade, number>;
 
-  const riderComparisons = currentMetrics
-    .map((metric) => {
+  const riderComparisonsBase = currentMetrics.map((metric) => {
       const previous = getMetricByRider(previousMetrics, metric);
       const previousCompletedForRider = previous?.totalCompleted ?? 0;
       const change = formatChange(metric.totalCompleted, previousCompletedForRider, "건");
-      return { metric, previousCompleted: previousCompletedForRider, change };
-    })
-    .sort((a, b) => {
-      const riskDiff = getRiskPriority(b.metric) - getRiskPriority(a.metric);
-      if (riskDiff) return riskDiff;
-      if (a.change.delta !== b.change.delta) return a.change.delta - b.change.delta;
-      return b.metric.totalCompleted - a.metric.totalCompleted;
-    })
+      const changeRate = previousCompletedForRider ? ((metric.totalCompleted - previousCompletedForRider) / previousCompletedForRider) * 100 : 0;
+      return {
+        id: metric.riderId,
+        metric,
+        previousCompleted: previousCompletedForRider,
+        change,
+        riskLevel: metric.riskLevel,
+        changeRate,
+        currentWeekCompleted: metric.totalCompleted,
+        latestAICoachingCreatedAt: getLatestLocalHistoryCreatedAt(metric.displayName, selectedWeekKey)
+      };
+    });
+
+  const riderComparisons = sortAdminRiderItems(riderComparisonsBase, riderSortOption)
     .slice(0, 10);
 
-  const weeklyBriefingCards = buildWeeklyBriefingCards(currentMetrics, previousMetrics, riskThreshold, opportunityThreshold);
+  const weeklyBriefingCardsBase = buildWeeklyBriefingCards(currentMetrics, previousMetrics, riskThreshold, opportunityThreshold);
+  const nonRiderBriefingCards = weeklyBriefingCardsBase.filter((card) => !card.riderName);
+  const riderBriefingCards = weeklyBriefingCardsBase.filter((card) => card.riderName);
+  const weeklyBriefingCards = [
+    ...nonRiderBriefingCards,
+    ...sortAdminRiderItems(
+      riderBriefingCards.map((card) => ({
+        ...card,
+        id: card.id,
+        riskLevel: card.riskLevel ?? "허용",
+        changeRate: card.changeRatePercent ?? 0,
+        currentWeekCompleted: card.currentCompleted ?? 0,
+        latestAICoachingCreatedAt: card.riderName ? getLatestLocalHistoryCreatedAt(card.riderName, selectedWeekKey) : undefined
+      })),
+      riderSortOption
+    )
+  ];
+  const managerActionRecords = useMemo(() => readManagerActionChecklistRecords(), [managerActionRevision]);
+
+  const weeklyAIBriefingSummary = buildWeeklyBriefingSummary({
+    weekKey: selectedWeekKey,
+    riders: riderComparisonsBase.map(({ metric, previousCompleted, changeRate }) => ({
+      riderName: metric.displayName,
+      riskLevel: metric.riskLevel,
+      previousWeekCompleted: previousCompleted,
+      currentWeekCompleted: metric.totalCompleted,
+      changeRate
+    })),
+    actionRecords: managerActionRecords,
+    coachingHistory: localAICoachingHistory
+  });
+  const weeklyAIBriefingHistory = localWeeklyBriefingHistory
+    .filter((entry) => entry.weekKey.trim() === selectedWeekKey.trim())
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const latestWeeklyAIBriefing = weeklyAIBriefingHistory[0];
+  const monthlyOperationReport = buildMonthlyOperationReport({
+    monthKey: getCurrentMonthKey(),
+    coachingHistory: localAICoachingHistory,
+    actionRecords: managerActionRecords,
+    riders: riderComparisonsBase.map(({ metric, changeRate }) => ({
+      riderName: metric.displayName,
+      riskLevel: metric.riskLevel,
+      currentWeekCompleted: metric.totalCompleted,
+      changeRate
+    })),
+    operationMemo
+  });
+
   const [aiLoadingById, setAiLoadingById] = useState<Record<string, boolean>>({});
-  const [aiResultById, setAiResultById] = useState<Record<string, { adminMessage: string; riderMessage: string; isTemplate: boolean }>>({});
-  const [aiCopyStatusById, setAiCopyStatusById] = useState<Record<string, { adminCopied?: boolean; riderCopied?: boolean }>>({});
+  const [aiResultById, setAiResultById] = useState<Record<string, AICoachingResultState>>({});
+  const [aiCopyStatusById, setAiCopyStatusById] = useState<Record<string, AICopyStatusState>>({});
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchStatus, setBatchStatus] = useState<string>("");
   const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
@@ -657,6 +783,197 @@ export function AdminDashboard() {
       saveThresholdLogs(next);
       return next;
     });
+  }
+
+  function normalizeRiskLevel(riskLevel: string): RiderRiskLevel {
+    const validRiskLevels: RiderRiskLevel[] = ["고위험", "관리주의", "허용", "안정", "에이스"];
+    return validRiskLevels.includes(riskLevel as RiderRiskLevel) ? (riskLevel as RiderRiskLevel) : "허용";
+  }
+
+  function refreshLocalAICoachingHistory() {
+    setLocalAICoachingHistory(readAICoachingHistoryEntries());
+  }
+
+  function refreshLocalWeeklyBriefingHistory() {
+    setLocalWeeklyBriefingHistory(readWeeklyAIBriefingEntries());
+  }
+
+  function buildCurrentWeeklyAIBriefingSummary(coachingHistory = localAICoachingHistory) {
+    return buildWeeklyBriefingSummary({
+      weekKey: selectedWeekKey,
+      riders: riderComparisonsBase.map(({ metric, previousCompleted, changeRate }) => ({
+        riderName: metric.displayName,
+        riskLevel: metric.riskLevel,
+        previousWeekCompleted: previousCompleted,
+        currentWeekCompleted: metric.totalCompleted,
+        changeRate
+      })),
+      actionRecords: readManagerActionChecklistRecords(),
+      coachingHistory
+    });
+  }
+
+  function normalizeWeeklyBriefingResult(data: unknown, fallback: WeeklyAIBriefingResult): WeeklyAIBriefingResult {
+    const result = data as Partial<WeeklyAIBriefingResult>;
+    const actions = Array.isArray(result.priorityActions)
+      ? result.priorityActions.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 3)
+      : fallback.priorityActions;
+
+    return {
+      weekKey: typeof result.weekKey === "string" && result.weekKey.trim() ? result.weekKey : fallback.weekKey,
+      briefingTitle: typeof result.briefingTitle === "string" && result.briefingTitle.trim() ? result.briefingTitle : fallback.briefingTitle,
+      executiveSummary: typeof result.executiveSummary === "string" && result.executiveSummary.trim() ? result.executiveSummary : fallback.executiveSummary,
+      riskSummary: typeof result.riskSummary === "string" && result.riskSummary.trim() ? result.riskSummary : fallback.riskSummary,
+      priorityActions: actions.length ? actions : fallback.priorityActions,
+      recommendedFocus: typeof result.recommendedFocus === "string" && result.recommendedFocus.trim() ? result.recommendedFocus : fallback.recommendedFocus,
+      messageForManagers:
+        typeof result.messageForManagers === "string" && result.messageForManagers.trim()
+          ? result.messageForManagers
+          : fallback.messageForManagers,
+      isTemplate: !!result.isTemplate,
+      source: result.source === "gemma4" ? "gemma4" : "template",
+      createdAt: typeof result.createdAt === "string" && result.createdAt.trim() ? result.createdAt : fallback.createdAt
+    };
+  }
+
+  function recordWeeklyAIBriefing(result: WeeklyAIBriefingResult, summary = weeklyAIBriefingSummary) {
+    const entry = createWeeklyAIBriefingEntry({ ...result, summary });
+    const saved = saveWeeklyAIBriefingEntry(entry);
+    if (saved) {
+      refreshLocalWeeklyBriefingHistory();
+    } else {
+      setLocalWeeklyBriefingHistory((current) => [entry, ...current]);
+      setWeeklyBriefingError("브리핑은 화면에 표시되지만 브라우저 저장소에는 저장하지 못했습니다.");
+    }
+    return entry;
+  }
+
+  function formatWeeklyBriefingCopy(entry: LocalWeeklyAIBriefingEntry) {
+    return [
+      `[주간 AI 브리핑] ${entry.weekKey}`,
+      "",
+      entry.briefingTitle,
+      `전체 라이더 ${formatNumber(entry.summary.totalRiders)}명 · 고위험 ${formatNumber(entry.summary.highRiskCount)}명 · 하락 라이더 ${formatNumber(entry.summary.declinedCount)}명`,
+      "",
+      `핵심 요약: ${entry.executiveSummary}`,
+      `위험 요약: ${entry.riskSummary}`,
+      "",
+      "우선 액션",
+      ...entry.priorityActions.slice(0, 3).map((action, index) => `${index + 1}. ${action}`),
+      "",
+      `집중 포인트: ${entry.recommendedFocus}`,
+      `관리자 메시지: ${entry.messageForManagers}`
+    ].join("\n");
+  }
+
+  async function handleCopyWeeklyBriefing(entry: LocalWeeklyAIBriefingEntry) {
+    try {
+      await navigator.clipboard.writeText(formatWeeklyBriefingCopy(entry));
+      setWeeklyBriefingCopyStatus("복사 완료");
+    } catch {
+      setWeeklyBriefingCopyStatus("복사 실패");
+    } finally {
+      window.setTimeout(() => setWeeklyBriefingCopyStatus(""), 1800);
+    }
+  }
+
+  async function handleGenerateWeeklyAIBriefing() {
+    const summary = buildCurrentWeeklyAIBriefingSummary(readAICoachingHistoryEntries());
+    if (!selectedWeekKey || summary.totalRiders === 0) {
+      setWeeklyBriefingError("브리핑을 생성할 데이터가 없습니다.");
+      return;
+    }
+
+    setWeeklyBriefingLoading(true);
+    setWeeklyBriefingError("");
+
+    try {
+      const response = await fetch("/api/ai-coaching/weekly-briefing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify({ weekKey: selectedWeekKey, summary })
+      });
+
+      if (!response.ok) {
+        throw new Error("weekly briefing request failed");
+      }
+
+      const fallback = createTemplateWeeklyAIBriefing(selectedWeekKey);
+      const result = normalizeWeeklyBriefingResult(await response.json(), fallback);
+      recordWeeklyAIBriefing(result, summary);
+    } catch {
+      const fallback = createTemplateWeeklyAIBriefing(selectedWeekKey);
+      recordWeeklyAIBriefing(fallback, summary);
+      setWeeklyBriefingError("AI 브리핑 API 연결 실패로 기본 템플릿을 저장했습니다.");
+    } finally {
+      setWeeklyBriefingLoading(false);
+    }
+  }
+
+  function getLocalHistoryFor(riderName: string, weekKey: string) {
+    return localAICoachingHistory
+      .filter((entry) => entry.riderName.trim() === riderName.trim() && entry.weekKey.trim() === weekKey.trim())
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  function getLatestLocalHistoryCreatedAt(riderName: string, weekKey: string) {
+    return getLocalHistoryFor(riderName, weekKey)[0]?.createdAt;
+  }
+
+  function getLatestLocalResultFor(riderName: string, weekKey: string): AICoachingResultState | undefined {
+    const latest = getLatestAICoachingHistoryForRiderWeek(riderName, weekKey);
+    if (!latest) return undefined;
+    return {
+      adminMessage: latest.adminMessage,
+      riderMessage: latest.riderMessage,
+      isTemplate: latest.isTemplate,
+      source: latest.source,
+      createdAt: latest.createdAt
+    };
+  }
+
+  function getVisibleAICoachingResult(key: string, riderName?: string, weekKey = selectedWeekKey) {
+    return aiResultById[key] ?? (riderName ? getLatestLocalResultFor(riderName, weekKey) : undefined);
+  }
+
+  function recordAICoachingResult(params: {
+    key: string;
+    riderName: string;
+    weekKey: string;
+    riskLevel: string;
+    previousWeekCompleted: number;
+    currentWeekCompleted: number;
+    changeRate: number;
+    adminMessage: string;
+    riderMessage: string;
+    isTemplate: boolean;
+    source: AICoachingSource;
+  }) {
+    const entry = createAICoachingHistoryEntry({
+      riderName: params.riderName,
+      weekKey: params.weekKey,
+      riskLevel: normalizeRiskLevel(params.riskLevel),
+      previousWeekCompleted: params.previousWeekCompleted,
+      currentWeekCompleted: params.currentWeekCompleted,
+      changeRate: params.changeRate,
+      adminMessage: params.adminMessage,
+      riderMessage: params.riderMessage,
+      isTemplate: params.isTemplate,
+      source: params.source
+    });
+
+    saveAICoachingHistoryEntry(entry);
+    refreshLocalAICoachingHistory();
+    setAiResultById((current) => ({
+      ...current,
+      [params.key]: {
+        adminMessage: entry.adminMessage,
+        riderMessage: entry.riderMessage,
+        isTemplate: entry.isTemplate,
+        source: entry.source,
+        createdAt: entry.createdAt
+      }
+    }));
   }
 
   async function handleGenerateAICoaching(
@@ -692,20 +1009,33 @@ export function AdminDashboard() {
       }
 
       if (!data) {
-        // as a last resort, show a local template
-        setAiResultById((s) => ({
-          ...s,
-          [key]: {
-            adminMessage: `⚠️ [${riderName}] AI 서비스가 응답하지 않아 기본 템플릿을 사용합니다.`,
-            riderMessage: `${riderName}님, 현재 외부 AI 응답이 불가하여 기본 코칭 문구를 안내드립니다. ${currentWeekCompleted}건`,
-            isTemplate: true
-          }
-        }));
+        recordAICoachingResult({
+          key,
+          riderName,
+          weekKey,
+          previousWeekCompleted,
+          currentWeekCompleted,
+          changeRate,
+          riskLevel,
+          adminMessage: `⚠️ [${riderName}] AI 서비스가 응답하지 않아 기본 템플릿을 사용합니다.`,
+          riderMessage: `${riderName}님, 현재 외부 AI 응답이 불가하여 기본 코칭 문구를 안내드립니다. ${currentWeekCompleted}건`,
+          isTemplate: true,
+          source: "local-template"
+        });
       } else {
-        setAiResultById((s) => ({
-          ...s,
-          [key]: { adminMessage: data.adminMessage, riderMessage: data.riderMessage, isTemplate: !!data.isTemplate }
-        }));
+        recordAICoachingResult({
+          key,
+          riderName,
+          weekKey,
+          previousWeekCompleted,
+          currentWeekCompleted,
+          changeRate,
+          riskLevel,
+          adminMessage: data.adminMessage,
+          riderMessage: data.riderMessage,
+          isTemplate: !!data.isTemplate,
+          source: data.isTemplate ? "template" : "gemma4"
+        });
       }
     } catch (error) {
       // network or unexpected error: try template endpoint
@@ -717,20 +1047,34 @@ export function AdminDashboard() {
         });
         const data = tpl.ok ? await tpl.json() : null;
         if (data) {
-          setAiResultById((s) => ({
-            ...s,
-            [key]: { adminMessage: data.adminMessage, riderMessage: data.riderMessage, isTemplate: !!data.isTemplate }
-          }));
+          recordAICoachingResult({
+            key,
+            riderName,
+            weekKey,
+            previousWeekCompleted,
+            currentWeekCompleted,
+            changeRate,
+            riskLevel,
+            adminMessage: data.adminMessage,
+            riderMessage: data.riderMessage,
+            isTemplate: !!data.isTemplate,
+            source: "template"
+          });
         }
       } catch {
-        setAiResultById((s) => ({
-          ...s,
-          [key]: {
-            adminMessage: `⚠️ [${riderName}] AI 호출 실패 - 기본 템플릿 사용`,
-            riderMessage: `${riderName}님, 현재 AI 서비스에 접근할 수 없어 기본 안내 문구를 표시합니다. (${currentWeekCompleted}건)`,
-            isTemplate: true
-          }
-        }));
+        recordAICoachingResult({
+          key,
+          riderName,
+          weekKey,
+          previousWeekCompleted,
+          currentWeekCompleted,
+          changeRate,
+          riskLevel,
+          adminMessage: `⚠️ [${riderName}] AI 호출 실패 - 기본 템플릿 사용`,
+          riderMessage: `${riderName}님, 현재 AI 서비스에 접근할 수 없어 기본 안내 문구를 표시합니다. (${currentWeekCompleted}건)`,
+          isTemplate: true,
+          source: "local-template"
+        });
       }
     } finally {
       setAiLoadingById((s) => ({ ...s, [key]: false }));
@@ -746,6 +1090,48 @@ export function AdminDashboard() {
       }, 1800);
     } catch {
       // noop: clipboard may fail in some environments
+    }
+  }
+
+  async function handleCopyKakaoMessage(key: string, riderName: string, riderMessage: string) {
+    const kakaoMessage = formatKakaoRiderMessage({ riderName, riderMessage });
+    try {
+      await navigator.clipboard.writeText(kakaoMessage);
+      setAiCopyStatusById((current) => ({
+        ...current,
+        [key]: {
+          ...(current[key] ?? {}),
+          kakaoCopied: true,
+          kakaoCopyFailed: false,
+          kakaoManualText: ""
+        }
+      }));
+      window.setTimeout(() => {
+        setAiCopyStatusById((current) => ({
+          ...current,
+          [key]: { ...(current[key] ?? {}), kakaoCopied: false }
+        }));
+      }, 1800);
+    } catch {
+      setAiCopyStatusById((current) => ({
+        ...current,
+        [key]: {
+          ...(current[key] ?? {}),
+          kakaoCopyFailed: true,
+          kakaoManualText: kakaoMessage
+        }
+      }));
+    }
+  }
+
+  async function handleCopyMonthlyOperationReport() {
+    try {
+      await navigator.clipboard.writeText(formatMonthlyOperationReportText(monthlyOperationReport));
+      setMonthlyReportCopyStatus("복사 완료");
+    } catch {
+      setMonthlyReportCopyStatus("복사 실패");
+    } finally {
+      window.setTimeout(() => setMonthlyReportCopyStatus(""), 1800);
     }
   }
 
@@ -793,16 +1179,34 @@ export function AdminDashboard() {
         error?: string;
       }>;
 
-      const nextResults = results.reduce<Record<string, { adminMessage: string; riderMessage: string; isTemplate: boolean }>>((acc, item) => {
+      const nextResults = results.reduce<Record<string, AICoachingResultState>>((acc, item) => {
+        const sourceItem = items.find((candidate) => candidate.riderId === item.riderId);
+        const source = item.isTemplate ? "template" : "gemma4";
+        const entry = createAICoachingHistoryEntry({
+          riderName: sourceItem?.riderName ?? item.riderId,
+          weekKey: selectedWeekKey,
+          riskLevel: normalizeRiskLevel(sourceItem?.riskLevel ?? "허용"),
+          previousWeekCompleted: sourceItem?.previousWeekCompleted ?? 0,
+          currentWeekCompleted: sourceItem?.currentWeekCompleted ?? 0,
+          changeRate: sourceItem?.changeRate ?? 0,
+          adminMessage: item.adminMessage,
+          riderMessage: item.riderMessage,
+          isTemplate: item.isTemplate,
+          source
+        });
+        saveAICoachingHistoryEntry(entry);
         acc[`rider-${item.riderId}`] = {
           adminMessage: item.adminMessage,
           riderMessage: item.riderMessage,
-          isTemplate: item.isTemplate
+          isTemplate: item.isTemplate,
+          source,
+          createdAt: entry.createdAt
         };
         return acc;
       }, {});
 
       setAiResultById((current) => ({ ...current, ...nextResults }));
+      refreshLocalAICoachingHistory();
       setBatchProgress({ completed: results.length, total: results.length });
 
       const failures = results
@@ -975,6 +1379,20 @@ export function AdminDashboard() {
         </div>
       </nav>
 
+      <section className="panel admin-sort-panel">
+        <label className="field admin-sort-field">
+          <span>라이더 표시 정렬</span>
+          <select value={riderSortOption} onChange={(event) => setRiderSortOption(event.target.value as AdminRiderSortOption)}>
+            {riderSortOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p>브리핑의 라이더 카드와 위험도 요약 리스트에만 적용됩니다.</p>
+      </section>
+
       <div className="dashboard-topic-list">
         <details className="dashboard-topic" id="admin-topic-briefing" open={openAdminTopics.briefing}>
           <summary className="dashboard-topic-summary" onClick={(event) => {
@@ -997,6 +1415,27 @@ export function AdminDashboard() {
                 </select>
               </label>
             </section>
+
+            <WeeklyAIBriefingPanel
+              weekKey={selectedWeekKey}
+              previousWeekKey={previousWeekKey}
+              summary={weeklyAIBriefingSummary}
+              latestBriefing={latestWeeklyAIBriefing}
+              history={weeklyAIBriefingHistory}
+              loading={weeklyBriefingLoading}
+              copyStatus={weeklyBriefingCopyStatus}
+              errorMessage={weeklyBriefingError}
+              onGenerate={handleGenerateWeeklyAIBriefing}
+              onCopy={handleCopyWeeklyBriefing}
+            />
+
+            <MonthlyOperationReportPanel
+              report={monthlyOperationReport}
+              copyStatus={monthlyReportCopyStatus}
+              operationMemo={operationMemo}
+              onMemoChange={setOperationMemo}
+              onCopy={handleCopyMonthlyOperationReport}
+            />
 
       <section className="panel weekly-briefing-panel">
         <div className="analysis-title">
@@ -1038,7 +1477,12 @@ export function AdminDashboard() {
         </div>
 
         <div className="weekly-briefing-list">
-          {weeklyBriefingCards.map((card) => (
+          {weeklyBriefingCards.map((card) => {
+            const cardRiderName = card.riderName;
+            const visibleAiResult = getVisibleAICoachingResult(card.id, cardRiderName, selectedWeekKey);
+            const cardHistory = cardRiderName ? getLocalHistoryFor(cardRiderName, selectedWeekKey) : [];
+
+            return (
             <details className={`weekly-briefing-card ${card.tone}`} key={card.id}>
               <summary className="weekly-briefing-card-head">
                 <span className="weekly-briefing-summary-text">
@@ -1073,30 +1517,38 @@ export function AdminDashboard() {
                         )
                       }
                     >
-                      {aiLoadingById[card.id] ? "생성 중…" : aiResultById[card.id] ? "재생성" : "AI 코칭 생성"}
+                      {aiLoadingById[card.id] ? "생성 중…" : visibleAiResult ? "재생성" : "AI 코칭 생성"}
                     </button>
 
-                    {aiResultById[card.id] ? (
+                    {visibleAiResult ? (
                       <div className="ai-result-block">
-                        <span className={`ai-result-badge ${aiResultById[card.id].isTemplate ? "template" : "generated"}`}>
-                          {aiResultById[card.id].isTemplate ? "기본 템플릿 사용" : "Gemma 4 생성"}
+                        <span className={`ai-result-badge ${visibleAiResult.isTemplate ? "template" : "generated"}`}>
+                          {visibleAiResult.isTemplate ? "기본 템플릿 사용" : "Gemma 4 생성"}
                         </span>
                       </div>
                     ) : null}
                   </div>
                 ) : null}
+                {cardRiderName ? <AICoachingHistoryPanel history={cardHistory} latestCreatedAt={visibleAiResult?.createdAt} /> : null}
+                {cardRiderName ? (
+                  <ManagerActionChecklist
+                    riderName={cardRiderName}
+                    weekKey={selectedWeekKey}
+                    onSaved={() => setManagerActionRevision((value) => value + 1)}
+                  />
+                ) : null}
                 {/* show result messages if present */}
-                {aiResultById[card.id] ? (
+                {visibleAiResult ? (
                   <div className="ai-result">
                     <div className="ai-result-admin">
                       <strong>관리자용 코칭</strong>
                       <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                        <p style={{ margin: 0, flex: 1 }}>{aiResultById[card.id].adminMessage}</p>
+                        <p style={{ margin: 0, flex: 1 }}>{visibleAiResult.adminMessage}</p>
                         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 90 }}>
                           <button
                             className="copy-button"
                             type="button"
-                            onClick={() => handleCopyText(card.id, "admin", aiResultById[card.id].adminMessage)}
+                            onClick={() => handleCopyText(card.id, "admin", visibleAiResult.adminMessage)}
                           >
                             관리자 문구 복사
                           </button>
@@ -1107,24 +1559,36 @@ export function AdminDashboard() {
                     <div className="ai-result-rider">
                       <strong>라이더 전달용</strong>
                       <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                        <p style={{ margin: 0, flex: 1 }}>{aiResultById[card.id].riderMessage}</p>
+                        <p style={{ margin: 0, flex: 1 }}>{visibleAiResult.riderMessage}</p>
                         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 90 }}>
                           <button
                             className="copy-button"
                             type="button"
-                            onClick={() => handleCopyText(card.id, "rider", aiResultById[card.id].riderMessage)}
+                            onClick={() => handleCopyText(card.id, "rider", visibleAiResult.riderMessage)}
                           >
                             라이더 전달 문구 복사
                           </button>
                           {aiCopyStatusById[card.id]?.riderCopied ? <span className="copy-toast">복사 완료</span> : null}
+                          <button
+                            className="copy-button"
+                            type="button"
+                            onClick={() => handleCopyKakaoMessage(card.id, cardRiderName ?? "라이더", visibleAiResult.riderMessage)}
+                          >
+                            카톡용 복사
+                          </button>
+                          {aiCopyStatusById[card.id]?.kakaoCopied ? <span className="copy-toast">복사 완료</span> : null}
                         </div>
                       </div>
+                      {aiCopyStatusById[card.id]?.kakaoCopyFailed ? (
+                        <textarea className="manual-copy-box" readOnly value={aiCopyStatusById[card.id]?.kakaoManualText ?? ""} />
+                      ) : null}
                     </div>
                   </div>
                 ) : null}
               </div>
             </details>
-          ))}
+            );
+          })}
         </div>
 
         <div className="threshold-log">
@@ -1426,7 +1890,12 @@ export function AdminDashboard() {
           </div>
         ) : null}
         <div className="rider-list">
-          {riderComparisons.map(({ metric, previousCompleted, change }) => (
+          {riderComparisons.map(({ metric, previousCompleted, change }) => {
+            const riderAiKey = `rider-${metric.riderId}`;
+            const visibleAiResult = getVisibleAICoachingResult(riderAiKey, metric.displayName, selectedWeekKey);
+            const riderHistory = getLocalHistoryFor(metric.displayName, selectedWeekKey);
+
+            return (
             <article className="list-card rider-risk-card" key={metric.riderId}>
               <div>
                 <strong>{metric.displayName}</strong>
@@ -1444,10 +1913,10 @@ export function AdminDashboard() {
                   <button
                     className="ai-coaching-button small"
                     type="button"
-                    disabled={!!aiLoadingById[`rider-${metric.riderId}`]}
+                    disabled={!!aiLoadingById[riderAiKey]}
                     onClick={() =>
                       handleGenerateAICoaching(
-                        `rider-${metric.riderId}`,
+                        riderAiKey,
                         metric.riderId,
                         metric.displayName,
                         selectedWeekKey,
@@ -1458,17 +1927,24 @@ export function AdminDashboard() {
                       )
                     }
                   >
-                    {aiLoadingById[`rider-${metric.riderId}`] ? "생성 중…" : aiResultById[`rider-${metric.riderId}`] ? "재생성" : "AI 코칭 생성"}
+                    {aiLoadingById[riderAiKey] ? "생성 중…" : visibleAiResult ? "재생성" : "AI 코칭 생성"}
                   </button>
-                  {aiResultById[`rider-${metric.riderId}`] ? (
-                    <span className={`ai-result-badge ${aiResultById[`rider-${metric.riderId}`].isTemplate ? "template" : "generated"}`}>
-                      {aiResultById[`rider-${metric.riderId}`].isTemplate ? "기본 템플릿 사용" : "Gemma 4 생성"}
+                  {visibleAiResult ? (
+                    <span className={`ai-result-badge ${visibleAiResult.isTemplate ? "template" : "generated"}`}>
+                      {visibleAiResult.isTemplate ? "기본 템플릿 사용" : "Gemma 4 생성"}
                     </span>
                   ) : null}
+                  <AICoachingHistoryPanel history={riderHistory} latestCreatedAt={visibleAiResult?.createdAt} />
+                  <ManagerActionChecklist
+                    riderName={metric.displayName}
+                    weekKey={selectedWeekKey}
+                    onSaved={() => setManagerActionRevision((value) => value + 1)}
+                  />
                 </div>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       </section>
           </div>

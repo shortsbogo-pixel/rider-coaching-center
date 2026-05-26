@@ -2,8 +2,11 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import { generateAICoachingMessages, getDefaultCoachingMessages } from "../services/aiCoachingService";
 import { saveAICoachingHistory, getAICoachingHistory } from "../services/aiCoachingHistoryService";
+import { generateMonthlyOperationReport } from "../services/monthlyReportService";
+import { generateWeeklyAIBriefing } from "../services/weeklyBriefingService";
 import type { RiderRiskLevel } from "../../../src/types/rider";
-import type { AICoachingHistoryEntry } from "../../../src/types/aiCoaching";
+import type { AICoachingHistoryEntry, WeeklyAIBriefingSummary } from "../../../src/types/aiCoaching";
+import type { MonthlyOperationReportSummary } from "../../../src/utils/monthlyOperationReport";
 
 const router = Router();
 
@@ -24,6 +27,82 @@ interface GenerateCoachingRequest {
   changeRate: number;
   riskLevel: RiderRiskLevel;
 }
+
+function isNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isWeeklyBriefingSummary(value: unknown): value is WeeklyAIBriefingSummary {
+  const summary = value as Partial<WeeklyAIBriefingSummary>;
+  return (
+    !!summary &&
+    isNumber(summary.totalRiders) &&
+    isNumber(summary.highRiskCount) &&
+    isNumber(summary.cautionCount) &&
+    isNumber(summary.stableCount) &&
+    isNumber(summary.declinedCount) &&
+    isNumber(summary.recoveredCount) &&
+    isNumber(summary.averageChangeRate) &&
+    Array.isArray(summary.topDeclinedRiders) &&
+    Array.isArray(summary.topRecoveredRiders) &&
+    isNumber(summary.actionCompletionRate) &&
+    isNumber(summary.coachingGeneratedCount)
+  );
+}
+
+function isMonthlyOperationReportSummary(value: unknown): value is MonthlyOperationReportSummary {
+  const summary = value as Partial<MonthlyOperationReportSummary>;
+  return (
+    !!summary &&
+    typeof summary.monthKey === "string" &&
+    isNumber(summary.coachingGeneratedCount) &&
+    isNumber(summary.highRiskCoachingCount) &&
+    isNumber(summary.cautionCoachingCount) &&
+    isNumber(summary.stableCoachingCount) &&
+    isNumber(summary.actionCompletionRate) &&
+    isNumber(summary.managementNeededRiderCount) &&
+    Array.isArray(summary.topCoachedRiders) &&
+    Array.isArray(summary.topDeclinedRiders) &&
+    typeof summary.operationMemo === "string"
+  );
+}
+
+// POST /api/ai-coaching/weekly-briefing - 관리자 주간 AI 브리핑 생성
+router.post("/weekly-briefing", async (req: Request, res: Response, next) => {
+  try {
+    const body = req.body as { weekKey?: unknown; summary?: unknown };
+
+    if (typeof body.weekKey !== "string" || !body.weekKey.trim()) {
+      res.status(400).json({ message: "weekKey가 필요합니다." });
+      return;
+    }
+
+    if (!isWeeklyBriefingSummary(body.summary)) {
+      res.status(400).json({ message: "summary 형식이 올바르지 않습니다." });
+      return;
+    }
+
+    res.json(await generateWeeklyAIBriefing(body.weekKey, body.summary));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/ai-coaching/monthly-report - 관리자 월간 운영 리포트 생성
+router.post("/monthly-report", async (req: Request, res: Response, next) => {
+  try {
+    const body = req.body as { summary?: unknown };
+
+    if (!isMonthlyOperationReportSummary(body.summary)) {
+      res.status(400).json({ message: "summary 형식이 올바르지 않습니다." });
+      return;
+    }
+
+    res.json(await generateMonthlyOperationReport(body.summary));
+  } catch (error) {
+    next(error);
+  }
+});
 
 // POST /api/ai-coaching/generate - AI 코칭 메시지 생성
 router.post("/generate", async (req: Request, res: Response, next) => {
