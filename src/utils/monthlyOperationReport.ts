@@ -138,7 +138,7 @@ export function formatMonthlyOperationReportText(report: MonthlyOperationReport)
 
   return [
     `[월간 운영 리포트] ${report.monthKey}`,
-    `월간 코칭 생성 ${report.coachingGeneratedCount}건`,
+    `월간 AI 코칭 생성 ${report.coachingGeneratedCount}건`,
     `고위험 코칭 ${report.highRiskCoachingCount}건`,
     `관리주의/주의 코칭 ${report.cautionCoachingCount}건`,
     `안정 라이더 코칭 ${report.stableCoachingCount}건`,

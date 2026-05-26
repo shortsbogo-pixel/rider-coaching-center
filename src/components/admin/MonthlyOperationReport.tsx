@@ -42,7 +42,7 @@ export function MonthlyOperationReportPanel({
   onCopy
 }: MonthlyOperationReportPanelProps) {
   const metricCards = [
-    { label: "총 코칭 생성", value: `${formatNumber(summary.coachingGeneratedCount)}건` },
+    { label: "총 AI 코칭", value: `${formatNumber(summary.coachingGeneratedCount)}건` },
     { label: "고위험 코칭", value: `${formatNumber(summary.highRiskCoachingCount)}건`, tone: "danger" },
     { label: "액션 완료율", value: formatRate(summary.actionCompletionRate), tone: "good" },
     { label: "관리 필요 라이더", value: `${formatNumber(summary.managementNeededRiderCount)}명`, tone: "warning" }

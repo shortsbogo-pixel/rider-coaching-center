@@ -50,7 +50,6 @@ import {
   readWeeklyAIBriefingEntries,
   saveWeeklyAIBriefingEntry
 } from "../utils/weeklyBriefingHistory";
-import { formatKakaoRiderMessage } from "../utils/riderMessageFormatter";
 import { getLatestWeekKey, sortWeekKeys } from "../utils/weekSelector";
 
 const fallbackMetrics = buildRiderMetrics(orders as OrderRecord[], riders as RiderProfile[]);
@@ -97,9 +96,6 @@ interface AICoachingResultState {
 interface AICopyStatusState {
   adminCopied?: boolean;
   riderCopied?: boolean;
-  kakaoCopied?: boolean;
-  kakaoCopyFailed?: boolean;
-  kakaoManualText?: string;
 }
 
 type AdminTopicId = "briefing" | "operation" | "analysis" | "riders";
@@ -1156,44 +1152,6 @@ export function AdminDashboard() {
     }
   }
 
-  async function handleCopyKakaoMessage(key: string, riderName: string, riderMessage: string) {
-    const card = weeklyBriefingCards.find((item) => item.id === key);
-    const kakaoMessage = formatKakaoRiderMessage({
-      riderName,
-      riderMessage,
-      currentWeekCompleted: card?.currentCompleted ?? 0,
-      changeRate: card?.changeRatePercent ?? 0,
-      riskLevel: card?.riskLevel ?? "활용"
-    });
-    try {
-      await navigator.clipboard.writeText(kakaoMessage);
-      setAiCopyStatusById((current) => ({
-        ...current,
-        [key]: {
-          ...(current[key] ?? {}),
-          kakaoCopied: true,
-          kakaoCopyFailed: false,
-          kakaoManualText: ""
-        }
-      }));
-      window.setTimeout(() => {
-        setAiCopyStatusById((current) => ({
-          ...current,
-          [key]: { ...(current[key] ?? {}), kakaoCopied: false }
-        }));
-      }, 1800);
-    } catch {
-      setAiCopyStatusById((current) => ({
-        ...current,
-        [key]: {
-          ...(current[key] ?? {}),
-          kakaoCopyFailed: true,
-          kakaoManualText: kakaoMessage
-        }
-      }));
-    }
-  }
-
   async function handleGenerateMonthlyOperationReport() {
     const summary = buildCurrentMonthlyOperationReportSummary(readAICoachingHistoryEntries());
     setMonthlyReportLoading(true);
@@ -1669,30 +1627,26 @@ export function AdminDashboard() {
                     </div>
                     <div className="ai-result-rider">
                       <strong>라이더 전달용</strong>
-                      <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                        <p style={{ margin: 0, flex: 1 }}>{visibleAiResult.riderMessage}</p>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 90 }}>
+                      <div className="ai-result-message-row">
+                        <p>{visibleAiResult.riderMessage}</p>
+                        <div className="ai-result-copy-actions">
                           <button
                             className="copy-button"
                             type="button"
                             onClick={() => handleCopyText(card.id, "rider", visibleAiResult.riderMessage)}
                           >
-                            라이더 전달 문구 복사
+                            원문 복사
                           </button>
                           {aiCopyStatusById[card.id]?.riderCopied ? <span className="copy-toast">복사 완료</span> : null}
-                          <button
-                            className="copy-button"
-                            type="button"
-                            onClick={() => handleCopyKakaoMessage(card.id, cardRiderName ?? "라이더", visibleAiResult.riderMessage)}
-                          >
-                            카톡용 복사
-                          </button>
-                          {aiCopyStatusById[card.id]?.kakaoCopied ? <span className="copy-toast">복사 완료</span> : null}
                         </div>
                       </div>
-                      {aiCopyStatusById[card.id]?.kakaoCopyFailed ? (
-                        <textarea className="manual-copy-box" readOnly value={aiCopyStatusById[card.id]?.kakaoManualText ?? ""} />
-                      ) : null}
+                      <MessageCopyPanel
+                        riderName={cardRiderName ?? "라이더"}
+                        riderMessage={visibleAiResult.riderMessage}
+                        currentWeekCompleted={card.currentCompleted ?? 0}
+                        changeRate={card.changeRatePercent ?? 0}
+                        riskLevel={card.riskLevel ?? "활용"}
+                      />
                     </div>
                   </div>
                 ) : null}

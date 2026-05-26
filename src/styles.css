@@ -1095,6 +1095,14 @@ input {
     align-items: flex-start;
     flex-direction: column;
   }
+  .ai-result-message-row,
+  .message-copy-buttons {
+    flex-direction: column;
+  }
+  .ai-result-copy-actions,
+  .message-copy-buttons .copy-button {
+    width: 100%;
+  }
 }
 
 .batch-action-row {
@@ -1486,7 +1494,7 @@ input {
 
 .monthly-report-metric-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1579,6 +1587,69 @@ input {
   min-height: 116px;
   margin-top: 8px;
   background: #fffaf0;
+}
+
+.ai-result-message-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.ai-result-message-row p {
+  flex: 1;
+  margin: 0;
+}
+
+.ai-result-copy-actions,
+.message-copy-panel,
+.message-copy-editor,
+.message-copy-editor label {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-result-copy-actions {
+  min-width: 96px;
+}
+
+.message-copy-panel {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #dfe6f0;
+}
+
+.message-copy-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.message-copy-buttons .copy-button {
+  min-height: 38px;
+}
+
+.message-copy-editor summary {
+  cursor: pointer;
+  color: #405166;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.message-copy-editor label span {
+  color: #26374a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.message-copy-editor textarea {
+  width: 100%;
+  border: 1px solid #d9e3ef;
+  border-radius: 8px;
+  padding: 10px;
+  color: #1f2f42;
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
 }
 
 .weekly-briefing-card {

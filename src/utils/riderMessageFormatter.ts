@@ -28,18 +28,30 @@ function formatRate(value: number) {
   return `${sign}${safeValue.toFixed(1)}%`;
 }
 
+function isHighRisk(riskLevel: string) {
+  return riskLevel === "고위험";
+}
+
+function isCautionRisk(riskLevel: string) {
+  return riskLevel === "관리주의" || riskLevel === "주의";
+}
+
+function isStableRisk(riskLevel: string) {
+  return riskLevel === "안정" || riskLevel === "활용" || riskLevel === "세이프";
+}
+
 export function buildRiderMessageSummary({ currentWeekCompleted, changeRate, riskLevel }: RiderMessageMetricInput) {
   const completed = safeNumber(currentWeekCompleted);
   const rateLabel = formatRate(changeRate);
 
-  if (riskLevel === "고위험") {
-    return `완료 ${completed}건, 전주 대비 ${rateLabel}로 활동 회복 관리가 필요한`;
+  if (isHighRisk(riskLevel)) {
+    return `완료 ${completed}건, 전주 대비 ${rateLabel}로 활동 회복과 관리 확인이 필요한`;
   }
-  if (riskLevel === "관리주의" || riskLevel === "주의") {
-    return `완료 ${completed}건, 전주 대비 ${rateLabel}로 회복 방향을 같이 잡아보면 좋은`;
+  if (isCautionRisk(riskLevel)) {
+    return `완료 ${completed}건, 전주 대비 ${rateLabel}로 회복 방향을 같이 잡아볼`;
   }
-  if (riskLevel === "안정" || riskLevel === "에이스" || riskLevel === "허용") {
-    return `완료 ${completed}건, 전주 대비 ${rateLabel}로 안정적인 활동을 이어가는`;
+  if (isStableRisk(riskLevel)) {
+    return `완료 ${completed}건, 전주 대비 ${rateLabel}로 안정적인 활동을 유지하고 있는`;
   }
   return `완료 ${completed}건 기준으로 추가 확인이 필요한`;
 }
@@ -52,7 +64,7 @@ export function formatKakaoRiderMessage({
   riskLevel
 }: FormatKakaoRiderMessageInput) {
   const summary = buildRiderMessageSummary({ currentWeekCompleted, changeRate, riskLevel });
-  const body = riderMessage.trim() || "이번 주 활동 흐름을 확인했습니다. 기존에 잘 나오던 시간대부터 차근차근 유지해보시면 좋겠습니다.";
+  const body = riderMessage.trim();
 
   return [
     "[코아파트너스 라이더 코칭 안내]",
@@ -60,7 +72,9 @@ export function formatKakaoRiderMessage({
     body,
     "무리하게 늘리기보다는 기존에 잘 나오던 시간대부터 다시 안정적으로 회복해보시면 좋겠습니다.",
     "필요하면 센터에서 같이 활동 패턴을 확인해드리겠습니다."
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function formatSmsRiderMessage({ riderName, currentWeekCompleted, changeRate, riskLevel }: FormatSmsRiderMessageInput) {
