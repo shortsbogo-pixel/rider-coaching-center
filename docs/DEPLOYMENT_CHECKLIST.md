@@ -1,5 +1,12 @@
 # Rider Coaching Center Deployment Checklist
 
+## Manus Beta Handoff Documents
+
+- `docs/MANUS_DEPLOYMENT_GUIDE.md`: Manus deployment mode and AI provider guidance
+- `docs/MANUS_BETA_CHECKLIST.md`: pre/post deployment checklist
+- `docs/MANUS_HANDOFF_PROMPT.md`: copy-ready prompt for Manus deployment request
+- `.env.manus.example`: recommended Manus environment variable template
+
 ## 1. Local Run
 
 ```powershell

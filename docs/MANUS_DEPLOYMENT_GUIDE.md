@@ -1,5 +1,18 @@
 # Manus Deployment Guide
 
+## Beta Deployment Position
+
+Use Manus beta as a template-first deployment. Local Ollama/Gemma 4 may not be reachable from Manus, so the stable default is:
+
+```env
+AI_PROVIDER=template
+AI_MODE=template
+AI_FALLBACK_ENABLED=true
+STORAGE_MODE=json
+```
+
+This deployment package is for beta handoff only. It does not execute a Manus deployment from this repository.
+
 ## AI Provider Recommendation
 
 Manus deployments may not be able to reach a local Ollama/Gemma 4 runtime. For beta or demo deployments, use deterministic template mode first:
@@ -11,6 +24,17 @@ AI_FALLBACK_ENABLED=true
 ```
 
 This keeps AI coaching, AI operation briefing, message queue text, and fallback badges stable without requiring a local model.
+
+## Provider Operating Modes
+
+| Provider | Current use | Recommendation |
+| --- | --- | --- |
+| `template` | Deterministic built-in coaching and briefing templates | Recommended for Manus beta |
+| `ollama` | Local PC or tunnel-based Gemma 4 operation | Use only when Ollama is reachable and stable |
+| `openai` | Safe stub in this phase | Future API-key integration only |
+| `gemini` | Safe stub in this phase | Future API-key integration only |
+
+OpenAI/Gemini do not make real external LLM calls in this phase. They fall back to templates when keys are missing or the provider is not implemented.
 
 ## Optional External AI Providers
 
@@ -48,3 +72,18 @@ If a local tunnel is used to reach Ollama, keep the PC awake and verify:
 - `OLLAMA_NUM_PREDICT=300`
 
 If the local model fails, `AI_FALLBACK_ENABLED=true` keeps template operation available.
+
+## Data And Backup Notes
+
+- `backend/data/*.json` is beta/MVP storage.
+- Confirm whether Manus runtime preserves these JSON files between restarts.
+- Download a backup before ending beta tests.
+- After beta, review Supabase/PostgreSQL or another managed database before production.
+- Do not commit `backend/data/*.json`, `.env`, uploads, Excel files, CSV exports, or real rider personal data.
+
+## Related Handoff Documents
+
+- `docs/MANUS_BETA_CHECKLIST.md`
+- `docs/MANUS_HANDOFF_PROMPT.md`
+- `.env.manus.example`
+- `docs/DEPLOYMENT_CHECKLIST.md`

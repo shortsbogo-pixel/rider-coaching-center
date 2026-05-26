@@ -1,5 +1,12 @@
 # Beta Deployment Options
 
+## Manus Handoff Links
+
+- `docs/MANUS_DEPLOYMENT_GUIDE.md`
+- `docs/MANUS_BETA_CHECKLIST.md`
+- `docs/MANUS_HANDOFF_PROMPT.md`
+- `.env.manus.example`
+
 ## AI Provider Notes For Beta Deployment
 
 - Manus beta deployments should start with `AI_PROVIDER=template` and `AI_MODE=template`.

@@ -1,5 +1,21 @@
 # Beta Runbook
 
+## Manus Beta Handoff Links
+
+- `docs/MANUS_DEPLOYMENT_GUIDE.md`: Manus/template provider operation guide
+- `docs/MANUS_BETA_CHECKLIST.md`: local and deployed beta checklist
+- `docs/MANUS_HANDOFF_PROMPT.md`: prompt to paste into Manus deployment request
+- `.env.manus.example`: Manus environment variable template
+
+Recommended Manus beta AI setting:
+
+```env
+AI_PROVIDER=template
+AI_MODE=template
+AI_FALLBACK_ENABLED=true
+STORAGE_MODE=json
+```
+
 ## 1. 로컬 베타 테스트 실행 순서
 
 1. Ollama 실행 상태 확인
