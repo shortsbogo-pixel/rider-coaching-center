@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import type { LocalAICoachingHistoryEntry } from "../../types/aiCoaching";
+import type { MessageQueueItem, MessageSendHistoryEntry } from "../../types/messageQueue";
 import type { OperationActionType } from "../../types/operation";
+import type { OperationLogEntry } from "../../types/operation";
 import type { ManagerActionChecklistRecord } from "../../utils/managerActionChecklist";
 import type { LocalMonthlyReportEntry } from "../../utils/monthlyReportHistory";
 import { createAICoachingHistoryCsv, createManagerActionsCsv, downloadTextFile } from "../../utils/exportCsv";
@@ -10,11 +12,23 @@ interface OperationBackupPanelProps {
   aiCoachingHistory: LocalAICoachingHistoryEntry[];
   managerActions: ManagerActionChecklistRecord[];
   monthlyReports: LocalMonthlyReportEntry[];
+  messageQueue: MessageQueueItem[];
+  messageSendHistory: MessageSendHistoryEntry[];
+  operationLogs: OperationLogEntry[];
   onRestored: () => void;
   onAudit?: (actionType: OperationActionType, summary: string) => void;
 }
 
-export function OperationBackupPanel({ aiCoachingHistory, managerActions, monthlyReports, onRestored, onAudit }: OperationBackupPanelProps) {
+export function OperationBackupPanel({
+  aiCoachingHistory,
+  managerActions,
+  monthlyReports,
+  messageQueue,
+  messageSendHistory,
+  operationLogs,
+  onRestored,
+  onAudit
+}: OperationBackupPanelProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [restoreMode, setRestoreMode] = useState<OperationRestoreMode>("merge");
   const [statusMessage, setStatusMessage] = useState("");
@@ -30,8 +44,16 @@ export function OperationBackupPanel({ aiCoachingHistory, managerActions, monthl
     setErrorMessage(message);
   }
 
+  function createBackupPayload() {
+    return createOperationBackup(undefined, {
+      messageQueue,
+      messageSendHistory,
+      operationLogs
+    });
+  }
+
   function downloadBackup() {
-    const backup = createOperationBackup();
+    const backup = createBackupPayload();
     downloadTextFile(`rider-coaching-backup-${getDateStamp()}.json`, JSON.stringify(backup, null, 2), "application/json;charset=utf-8");
     setStatus("운영 데이터 백업 파일을 생성했습니다.");
     onAudit?.("BACKUP_DOWNLOADED", "운영 데이터 백업 파일 생성");
@@ -68,7 +90,7 @@ export function OperationBackupPanel({ aiCoachingHistory, managerActions, monthl
   }
 
   function exportAllOperationJson() {
-    const backup = createOperationBackup();
+    const backup = createBackupPayload();
     downloadTextFile(`rider-operation-data-${getDateStamp()}.json`, JSON.stringify(backup, null, 2), "application/json;charset=utf-8");
     setStatus("전체 운영 데이터 JSON을 내보냈습니다.");
     onAudit?.("CSV_EXPORTED", "전체 운영 데이터 JSON 내보내기");

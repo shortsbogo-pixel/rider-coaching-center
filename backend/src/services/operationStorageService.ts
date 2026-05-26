@@ -25,7 +25,7 @@ export function createOperationStorageService(rootDir?: string) {
   const messageSendHistory = createJsonFileCollection<OperationStoredItem>("message-send-history.json", rootDir);
   const backupMeta = createJsonFileCollection<OperationBackupMetaEntry>("backup-meta.json", rootDir);
   const aiStatusChecks = createJsonFileCollection<AIStatusCheckEntry>("ai-status-checks.json", rootDir);
-  const operationLogs = createJsonFileCollection<OperationLogEntry>("operation-logs.json", rootDir);
+  const operationLogs = createJsonFileCollection<OperationLogEntry>("operation-logs.json", rootDir, { backupCorrupted: true });
 
   return {
     aiCoachingHistory,
@@ -39,8 +39,8 @@ export function createOperationStorageService(rootDir?: string) {
     aiStatusChecks,
     operationLogs: {
       ...operationLogs,
-      async getLatest() {
-        return newestFirst(await operationLogs.getAll());
+      async getLatest(limit = 100) {
+        return newestFirst(await operationLogs.getAll()).slice(0, limit);
       }
     }
   };

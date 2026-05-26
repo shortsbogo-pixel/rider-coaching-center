@@ -3,6 +3,7 @@ import type { OperationActionType, OperationApiResponse, OperationLogEntry } fro
 import type { ManagerActionChecklistRecord } from "./managerActionChecklist";
 import type { LocalMonthlyReportEntry } from "./monthlyReportHistory";
 import { getAuthHeader, getStoredUser } from "./authStore";
+import { operationStorageKeys, safeReadOperationArray, safeWriteOperationArray } from "./operationBackup";
 
 type OperationApiEnv = {
   readonly VITE_API_BASE_URL?: string;
@@ -111,9 +112,13 @@ export function createOperationLog(input: {
 }
 
 export async function writeOperationLog(input: Parameters<typeof createOperationLog>[0]) {
+  const log = createOperationLog(input);
   try {
-    await operationApi.saveLog(createOperationLog(input));
+    await operationApi.saveLog(log);
+    return true;
   } catch {
-    // Operation logging must never block the admin workflow.
+    const current = safeReadOperationArray(operationStorageKeys.operationLogs);
+    safeWriteOperationArray(operationStorageKeys.operationLogs, [log, ...current].slice(0, 100));
+    return false;
   }
 }

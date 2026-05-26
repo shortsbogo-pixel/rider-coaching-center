@@ -5,6 +5,7 @@ import aiCoachingRoutes from "./routes/aiCoachingRoutes";
 import coachingRoutes from "./routes/coachingRoutes";
 import coachingMessageRoutes from "./routes/coachingMessageRoutes";
 import dataManagementRoutes from "./routes/dataManagementRoutes";
+import healthRoutes from "./routes/healthRoutes";
 import operationDataRoutes from "./routes/operationDataRoutes";
 import riderRoutes from "./routes/riderRoutes";
 import uploadRoutes from "./routes/uploadRoutes";
@@ -15,9 +16,7 @@ const port = Number(process.env.PORT ?? 4100);
 app.use(cors());
 app.use(express.json());
 
-app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, service: "rider-coaching-center" });
-});
+app.use("/api/health", healthRoutes);
 
 app.use("/api/uploads", uploadRoutes);
 app.use("/api/riders", riderRoutes);

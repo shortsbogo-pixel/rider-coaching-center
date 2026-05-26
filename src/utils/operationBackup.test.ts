@@ -25,6 +25,9 @@ test("creates a safe operation backup payload from local storage data", () => {
   storage.setItem(operationStorageKeys.managerActions, "not-json");
   storage.setItem(operationStorageKeys.weeklyBriefings, JSON.stringify([{ id: "week-1" }]));
   storage.setItem(operationStorageKeys.monthlyReports, JSON.stringify([{ id: "month-1" }]));
+  storage.setItem(operationStorageKeys.messageQueue, JSON.stringify([{ id: "queue-1" }]));
+  storage.setItem(operationStorageKeys.messageSendHistory, JSON.stringify([{ id: "send-1" }]));
+  storage.setItem(operationStorageKeys.operationLogs, JSON.stringify([{ id: "log-1" }]));
 
   const backup = createOperationBackup(storage);
 
@@ -34,6 +37,9 @@ test("creates a safe operation backup payload from local storage data", () => {
   assert.equal(backup.data.managerActions.length, 0);
   assert.equal(backup.data.weeklyBriefings.length, 1);
   assert.equal(backup.data.monthlyReports.length, 1);
+  assert.equal(backup.data.messageQueue.length, 1);
+  assert.equal(backup.data.messageSendHistory.length, 1);
+  assert.equal(backup.data.operationLogs.length, 1);
   assert.equal(backup.data.messageCopySnapshots.length, 1);
   assert.equal(validateOperationBackup(backup).valid, true);
 });
@@ -51,6 +57,9 @@ test("restores operation backup by overwrite or merge", () => {
       managerActions: [],
       weeklyBriefings: [],
       monthlyReports: [],
+      messageQueue: [{ id: "queue-new" }],
+      messageSendHistory: [{ id: "send-new" }],
+      operationLogs: [{ id: "log-new" }],
       messageCopySnapshots: []
     }
   };
@@ -58,6 +67,7 @@ test("restores operation backup by overwrite or merge", () => {
   const merged = restoreOperationBackup(backup, "merge", storage);
   assert.equal(merged.ok, true);
   assert.deepEqual(JSON.parse(storage.getItem(operationStorageKeys.aiCoachingHistory) ?? "[]").map((item: { id: string }) => item.id), ["old", "new"]);
+  assert.deepEqual(JSON.parse(storage.getItem(operationStorageKeys.messageQueue) ?? "[]").map((item: { id: string }) => item.id), ["queue-new"]);
 
   const overwritten = restoreOperationBackup(backup, "overwrite", storage);
   assert.equal(overwritten.ok, true);

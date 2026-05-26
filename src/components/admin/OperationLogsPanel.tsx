@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { OperationLogEntry, OperationLogFilter } from "../../types/operation";
 import { operationApi } from "../../utils/operationApi";
+import { operationStorageKeys, safeReadOperationArray, safeWriteOperationArray } from "../../utils/operationBackup";
 
 const filterOptions: Array<{ value: OperationLogFilter; label: string; actionTypes?: string[] }> = [
   { value: "all", label: "전체" },
@@ -55,7 +56,7 @@ function actionLabel(actionType: string) {
   return labels[actionType] ?? actionType;
 }
 
-export function OperationLogsPanel({ refreshKey = 0 }: { refreshKey?: number }) {
+export function OperationLogsPanel({ refreshKey = 0, onLoaded }: { refreshKey?: number; onLoaded?: (logs: OperationLogEntry[]) => void }) {
   const [logs, setLogs] = useState<OperationLogEntry[]>([]);
   const [filter, setFilter] = useState<OperationLogFilter>("all");
   const [errorMessage, setErrorMessage] = useState("");
@@ -65,18 +66,23 @@ export function OperationLogsPanel({ refreshKey = 0 }: { refreshKey?: number }) 
     operationApi
       .getLogs()
       .then((items) => {
-        if (mounted) {
-          setLogs(items);
-          setErrorMessage("");
-        }
+        if (!mounted) return;
+        setLogs(items);
+        safeWriteOperationArray(operationStorageKeys.operationLogs, items);
+        onLoaded?.(items);
+        setErrorMessage("");
       })
       .catch(() => {
-        if (mounted) setErrorMessage("운영 로그를 불러오지 못했습니다.");
+        if (!mounted) return;
+        const localLogs = safeReadOperationArray(operationStorageKeys.operationLogs) as OperationLogEntry[];
+        setLogs(localLogs);
+        onLoaded?.(localLogs);
+        setErrorMessage(localLogs.length ? "운영 로그 서버 조회에 실패해 로컬 임시 로그를 표시합니다." : "운영 로그를 불러오지 못했습니다.");
       });
     return () => {
       mounted = false;
     };
-  }, [refreshKey]);
+  }, [refreshKey, onLoaded]);
 
   const visibleLogs = useMemo(() => {
     const option = filterOptions.find((item) => item.value === filter);
@@ -89,7 +95,7 @@ export function OperationLogsPanel({ refreshKey = 0 }: { refreshKey?: number }) 
       <div className="operation-panel-title">
         <div>
           <h3>운영 로그 보기</h3>
-          <p>관리자 주요 작업을 최신순으로 기록합니다.</p>
+          <p>관리자 주요 작업을 최신순으로 기록합니다. 최근 100개를 우선 표시합니다.</p>
         </div>
         <label className="field operation-log-filter">
           <span>필터</span>
@@ -103,31 +109,29 @@ export function OperationLogsPanel({ refreshKey = 0 }: { refreshKey?: number }) 
         </label>
       </div>
 
-      {errorMessage ? (
-        <p className="operation-error-message">{errorMessage}</p>
-      ) : (
-        <div className="operation-log-list">
-          {visibleLogs.length ? (
-            visibleLogs.slice(0, 30).map((log) => (
-              <article className="operation-log-card" key={log.id}>
-                <div>
-                  <strong>{actionLabel(log.actionType)}</strong>
-                  <span>{formatDateTime(log.createdAt)}</span>
-                </div>
-                <p>{log.summary}</p>
-                <small>
-                  {log.actorName} · {log.actorRole}
-                  {log.riderName ? ` · ${log.riderName}` : ""}
-                  {log.weekKey ? ` · ${log.weekKey}` : ""}
-                  {log.monthKey ? ` · ${log.monthKey}` : ""}
-                </small>
-              </article>
-            ))
-          ) : (
-            <p className="operation-empty-message">아직 운영 로그가 없습니다.</p>
-          )}
-        </div>
-      )}
+      {errorMessage ? <p className="operation-error-message">{errorMessage}</p> : null}
+
+      <div className="operation-log-list">
+        {visibleLogs.length ? (
+          visibleLogs.slice(0, 100).map((log) => (
+            <article className="operation-log-card" key={log.id}>
+              <div>
+                <strong>{actionLabel(log.actionType)}</strong>
+                <span>{formatDateTime(log.createdAt)}</span>
+              </div>
+              <p>{log.summary}</p>
+              <small>
+                {log.actorName} · {log.actorRole}
+                {log.riderName ? ` · ${log.riderName}` : ""}
+                {log.weekKey ? ` · ${log.weekKey}` : ""}
+                {log.monthKey ? ` · ${log.monthKey}` : ""}
+              </small>
+            </article>
+          ))
+        ) : (
+          <p className="operation-empty-message">아직 운영 로그가 없습니다.</p>
+        )}
+      </div>
     </section>
   );
 }

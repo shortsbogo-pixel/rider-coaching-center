@@ -2018,6 +2018,11 @@ input {
   background: #fff9eb;
 }
 
+.operation-check-card.danger {
+  border-color: #f1aaa3;
+  background: #fff6f5;
+}
+
 .operation-status-card span,
 .operation-check-card span {
   color: #65758a;
@@ -2051,6 +2056,15 @@ input {
 
 .operation-check-card .status-pill {
   flex: 0 0 auto;
+}
+
+.deployment-readiness-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.deployment-readiness-grid .operation-check-card {
+  min-height: 118px;
 }
 
 .operation-restore-row {

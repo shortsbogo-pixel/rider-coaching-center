@@ -2,7 +2,10 @@ export const operationStorageKeys = {
   aiCoachingHistory: "rider-coaching-ai-history-v1",
   managerActions: "rider-coaching-manager-actions-v1",
   weeklyBriefings: "rider-coaching-weekly-ai-briefings-v1",
-  monthlyReports: "rider-coaching-monthly-operation-reports-v1"
+  monthlyReports: "rider-coaching-monthly-operation-reports-v1",
+  messageQueue: "rider-coaching-message-queue",
+  messageSendHistory: "rider-coaching-message-send-history",
+  operationLogs: "rider-coaching-operation-logs-v1"
 } as const;
 
 export type OperationRestoreMode = "overwrite" | "merge";
@@ -25,6 +28,9 @@ export interface OperationBackupData {
   managerActions: unknown[];
   weeklyBriefings: unknown[];
   monthlyReports: unknown[];
+  messageQueue: unknown[];
+  messageSendHistory: unknown[];
+  operationLogs: unknown[];
   messageCopySnapshots: MessageCopySnapshot[];
 }
 
@@ -41,7 +47,7 @@ function getStorage(storage?: StorageLike): StorageLike | null {
   return window.localStorage;
 }
 
-function safeReadArray(key: string, storage?: StorageLike): unknown[] {
+export function safeReadOperationArray(key: string, storage?: StorageLike): unknown[] {
   try {
     const targetStorage = getStorage(storage);
     if (!targetStorage) return [];
@@ -54,7 +60,7 @@ function safeReadArray(key: string, storage?: StorageLike): unknown[] {
   }
 }
 
-function safeWriteArray(key: string, value: unknown[], storage?: StorageLike) {
+export function safeWriteOperationArray(key: string, value: unknown[], storage?: StorageLike) {
   try {
     const targetStorage = getStorage(storage);
     if (!targetStorage) return false;
@@ -99,8 +105,24 @@ function buildMessageCopySnapshots(aiCoachingHistory: unknown[]): MessageCopySna
     .filter((entry) => entry.riderName || entry.riderMessage || entry.adminMessage);
 }
 
-export function createOperationBackup(storage?: StorageLike): OperationBackupFile {
-  const aiCoachingHistory = safeReadArray(operationStorageKeys.aiCoachingHistory, storage);
+function normalizeBackupData(data: Record<string, unknown>): OperationBackupData {
+  return {
+    aiCoachingHistory: Array.isArray(data.aiCoachingHistory) ? data.aiCoachingHistory : [],
+    managerActions: Array.isArray(data.managerActions) ? data.managerActions : [],
+    weeklyBriefings: Array.isArray(data.weeklyBriefings) ? data.weeklyBriefings : [],
+    monthlyReports: Array.isArray(data.monthlyReports) ? data.monthlyReports : [],
+    messageQueue: Array.isArray(data.messageQueue) ? data.messageQueue : [],
+    messageSendHistory: Array.isArray(data.messageSendHistory) ? data.messageSendHistory : [],
+    operationLogs: Array.isArray(data.operationLogs) ? data.operationLogs : [],
+    messageCopySnapshots: Array.isArray(data.messageCopySnapshots) ? (data.messageCopySnapshots as MessageCopySnapshot[]) : []
+  };
+}
+
+export function createOperationBackup(
+  storage?: StorageLike,
+  overrides: Partial<Pick<OperationBackupData, "messageQueue" | "messageSendHistory" | "operationLogs">> = {}
+): OperationBackupFile {
+  const aiCoachingHistory = safeReadOperationArray(operationStorageKeys.aiCoachingHistory, storage);
 
   return {
     exportedAt: new Date().toISOString(),
@@ -108,9 +130,12 @@ export function createOperationBackup(storage?: StorageLike): OperationBackupFil
     version: "1",
     data: {
       aiCoachingHistory,
-      managerActions: safeReadArray(operationStorageKeys.managerActions, storage),
-      weeklyBriefings: safeReadArray(operationStorageKeys.weeklyBriefings, storage),
-      monthlyReports: safeReadArray(operationStorageKeys.monthlyReports, storage),
+      managerActions: safeReadOperationArray(operationStorageKeys.managerActions, storage),
+      weeklyBriefings: safeReadOperationArray(operationStorageKeys.weeklyBriefings, storage),
+      monthlyReports: safeReadOperationArray(operationStorageKeys.monthlyReports, storage),
+      messageQueue: overrides.messageQueue ?? safeReadOperationArray(operationStorageKeys.messageQueue, storage),
+      messageSendHistory: overrides.messageSendHistory ?? safeReadOperationArray(operationStorageKeys.messageSendHistory, storage),
+      operationLogs: overrides.operationLogs ?? safeReadOperationArray(operationStorageKeys.operationLogs, storage),
       messageCopySnapshots: buildMessageCopySnapshots(aiCoachingHistory)
     }
   };
@@ -128,8 +153,11 @@ export function validateOperationBackup(value: unknown): { valid: true; backup: 
   const requiredArrays = ["aiCoachingHistory", "managerActions", "weeklyBriefings", "monthlyReports", "messageCopySnapshots"];
   const invalidKey = requiredArrays.find((key) => !Array.isArray(data[key]));
   if (invalidKey) return { valid: false, reason: `${invalidKey} 데이터 형식이 올바르지 않습니다.` };
+  const optionalArrays = ["messageQueue", "messageSendHistory", "operationLogs"];
+  const invalidOptionalKey = optionalArrays.find((key) => data[key] !== undefined && !Array.isArray(data[key]));
+  if (invalidOptionalKey) return { valid: false, reason: `${invalidOptionalKey} 데이터 형식이 올바르지 않습니다.` };
 
-  return { valid: true, backup: value as unknown as OperationBackupFile };
+  return { valid: true, backup: { ...(value as unknown as OperationBackupFile), data: normalizeBackupData(data) } };
 }
 
 export function restoreOperationBackup(value: unknown, mode: OperationRestoreMode, storage?: StorageLike) {
@@ -141,12 +169,15 @@ export function restoreOperationBackup(value: unknown, mode: OperationRestoreMod
     [operationStorageKeys.aiCoachingHistory, backup.data.aiCoachingHistory],
     [operationStorageKeys.managerActions, backup.data.managerActions],
     [operationStorageKeys.weeklyBriefings, backup.data.weeklyBriefings],
-    [operationStorageKeys.monthlyReports, backup.data.monthlyReports]
+    [operationStorageKeys.monthlyReports, backup.data.monthlyReports],
+    [operationStorageKeys.messageQueue, backup.data.messageQueue],
+    [operationStorageKeys.messageSendHistory, backup.data.messageSendHistory],
+    [operationStorageKeys.operationLogs, backup.data.operationLogs]
   ];
 
   for (const [key, incoming] of pairs) {
-    const next = mode === "merge" ? mergeArrays(safeReadArray(key, storage), incoming) : incoming;
-    if (!safeWriteArray(key, next, storage)) {
+    const next = mode === "merge" ? mergeArrays(safeReadOperationArray(key, storage), incoming) : incoming;
+    if (!safeWriteOperationArray(key, next, storage)) {
       return { ok: false, message: "브라우저 저장소에 복원하지 못했습니다." };
     }
   }

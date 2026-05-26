@@ -203,7 +203,7 @@ router.post("/ai-status-results", postCollection(operationStorageService.aiStatu
 
 router.get("/logs", async (_req, res) => {
   try {
-    ok(res, await operationStorageService.operationLogs.getLatest());
+    ok(res, await operationStorageService.operationLogs.getLatest(100));
   } catch (error) {
     fail(res, error);
   }

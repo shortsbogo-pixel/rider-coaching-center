@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -67,6 +67,47 @@ test("operation logs are returned newest first", async () => {
     });
 
     assert.deepEqual((await service.operationLogs.getLatest()).map((entry) => entry.id), ["new", "old"]);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("operation logs keep the newest 100 entries by default", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "operation-storage-"));
+  try {
+    const service = createOperationStorageService(rootDir);
+    for (let index = 0; index < 105; index += 1) {
+      await service.operationLogs.save({
+        id: `log-${index}`,
+        actionType: "AI_COACHING_GENERATED",
+        actorRole: "admin",
+        actorName: "관리자",
+        summary: `log ${index}`,
+        createdAt: new Date(Date.UTC(2026, 4, 26, 0, index)).toISOString()
+      });
+    }
+
+    const latest = await service.operationLogs.getLatest();
+
+    assert.equal(latest.length, 100);
+    assert.equal(latest[0].id, "log-104");
+    assert.equal(latest.at(-1)?.id, "log-5");
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("operation logs rename corrupted json before recreating an empty list", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "operation-storage-"));
+  try {
+    await writeFile(join(rootDir, "operation-logs.json"), "{ broken", "utf8");
+    const service = createOperationStorageService(rootDir);
+
+    assert.deepEqual(await service.operationLogs.getAll(), []);
+
+    const files = await readdir(rootDir);
+    assert.ok(files.some((file) => file.startsWith("operation-logs.corrupt-") && file.endsWith(".json")));
+    assert.equal(await readFile(join(rootDir, "operation-logs.json"), "utf8"), "[]\n");
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }

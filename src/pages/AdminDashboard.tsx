@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronUp, Menu } from "lucide-react";
 import orders from "../data/sampleOrders.json";
 import riders from "../data/sampleRiders.json";
@@ -8,6 +8,7 @@ import { SectionHeader } from "../components/common/SectionHeader";
 import { AICoachingHistoryPanel } from "../components/admin/AICoachingHistoryPanel";
 import { AIStatusPanel } from "../components/admin/AIStatusPanel";
 import { DataQualityWarningPanel } from "../components/admin/DataQualityWarningPanel";
+import { DeploymentReadinessPanel } from "../components/admin/DeploymentReadinessPanel";
 import { ManagerActionChecklist } from "../components/admin/ManagerActionChecklist";
 import { MessageCopyPanel } from "../components/admin/MessageCopyPanel";
 import { MessageQueuePanel } from "../components/admin/MessageQueuePanel";
@@ -31,7 +32,7 @@ import type {
   LocalWeeklyAIBriefingEntry,
   WeeklyAIBriefingResult
 } from "../types/aiCoaching";
-import type { MigrationResult, OperationActionType, OperationSaveStatus } from "../types/operation";
+import type { MigrationResult, OperationActionType, OperationLogEntry, OperationSaveStatus } from "../types/operation";
 import { getAuthHeader } from "../utils/authStore";
 import {
   createAICoachingHistoryEntry,
@@ -56,6 +57,7 @@ import { buildLunchMissionBrief, getUploadHealth, getWeakestAction } from "../ut
 import { readManagerActionChecklistRecords, saveManagerActionChecklist } from "../utils/managerActionChecklist";
 import type { ManagerActionChecklistRecord } from "../utils/managerActionChecklist";
 import { operationApi, writeOperationLog } from "../utils/operationApi";
+import { operationStorageKeys, safeReadOperationArray, safeWriteOperationArray } from "../utils/operationBackup";
 import { messageQueueApi } from "../utils/messageQueueApi";
 import {
   createMessageQueueItem,
@@ -594,6 +596,7 @@ export function AdminDashboard() {
   const [operationLogRevision, setOperationLogRevision] = useState(0);
   const [messageQueueItems, setMessageQueueItems] = useState<MessageQueueItem[]>(() => readMessageQueueItems());
   const [messageSendHistory, setMessageSendHistory] = useState<MessageSendHistoryEntry[]>(() => readMessageSendHistoryEntries());
+  const [operationLogs, setOperationLogs] = useState<OperationLogEntry[]>(() => safeReadOperationArray(operationStorageKeys.operationLogs) as OperationLogEntry[]);
   const [messageQueueStatusByKey, setMessageQueueStatusByKey] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -620,12 +623,13 @@ export function AdminDashboard() {
   useEffect(() => {
     let mounted = true;
     async function loadOperationData() {
-      const [historyResult, weeklyBriefingsResult, monthlyReportsResult, messageQueueResult, messageSendHistoryResult] = await Promise.allSettled([
+      const [historyResult, weeklyBriefingsResult, monthlyReportsResult, messageQueueResult, messageSendHistoryResult, operationLogsResult] = await Promise.allSettled([
         operationApi.getAICoachingHistory(),
         operationApi.getWeeklyBriefings(),
         operationApi.getMonthlyReports(),
         messageQueueApi.getQueue(),
-        messageQueueApi.getSendHistory()
+        messageQueueApi.getSendHistory(),
+        operationApi.getLogs()
       ]);
       if (!mounted) return;
 
@@ -659,7 +663,16 @@ export function AdminDashboard() {
         setMessageSendHistory(readMessageSendHistoryEntries());
       }
 
-      const hasServerLoadFailure = [historyResult, weeklyBriefingsResult, monthlyReportsResult, messageQueueResult, messageSendHistoryResult].some((result) => result.status === "rejected");
+      if (operationLogsResult.status === "fulfilled") {
+        setOperationLogs(operationLogsResult.value);
+        safeWriteOperationArray(operationStorageKeys.operationLogs, operationLogsResult.value);
+      } else {
+        setOperationLogs(safeReadOperationArray(operationStorageKeys.operationLogs) as OperationLogEntry[]);
+      }
+
+      const hasServerLoadFailure = [historyResult, weeklyBriefingsResult, monthlyReportsResult, messageQueueResult, messageSendHistoryResult, operationLogsResult].some(
+        (result) => result.status === "rejected"
+      );
       if (hasServerLoadFailure) {
         setOperationSaveStatus("local");
         setOperationSaveDetail("일부 서버 조회 실패로 로컬 임시 데이터를 함께 사용합니다.");
@@ -970,12 +983,17 @@ export function AdminDashboard() {
     setMessageSendHistory(readMessageSendHistoryEntries());
   }
 
+  function refreshLocalOperationLogs() {
+    setOperationLogs(safeReadOperationArray(operationStorageKeys.operationLogs) as OperationLogEntry[]);
+  }
+
   function refreshOperationDataAfterRestore() {
     refreshLocalAICoachingHistory();
     refreshLocalWeeklyBriefingHistory();
     refreshLocalMonthlyReportHistory();
     refreshLocalMessageQueue();
     refreshLocalMessageSendHistory();
+    refreshLocalOperationLogs();
     setManagerActionRevision((value) => value + 1);
   }
 
@@ -985,9 +1003,18 @@ export function AdminDashboard() {
   }
 
   async function audit(actionType: OperationActionType, summary: string, extra?: { riderName?: string; weekKey?: string; monthKey?: string }) {
-    await writeOperationLog({ actionType, summary, ...extra });
+    const savedToServer = await writeOperationLog({ actionType, summary, ...extra });
+    if (!savedToServer) {
+      refreshLocalOperationLogs();
+      setSaveStatus("local", "운영 로그 서버 저장 실패로 로컬 임시 로그를 표시합니다.");
+    }
     setOperationLogRevision((value) => value + 1);
   }
+
+  const handleOperationLogsLoaded = useCallback((logs: OperationLogEntry[]) => {
+    setOperationLogs(logs);
+    safeWriteOperationArray(operationStorageKeys.operationLogs, logs);
+  }, []);
 
   async function saveAICoachingEntry(entry: LocalAICoachingHistoryEntry, actionType: OperationActionType = "AI_COACHING_GENERATED") {
     try {
@@ -1914,18 +1941,22 @@ export function AdminDashboard() {
           void audit("AI_STATUS_CHECKED", status.message || "AI 상태 점검 실행");
         }}
       />
+      <DeploymentReadinessPanel />
       <OperationDataCheckPanel items={operationDataCheckItems} />
       <OperationBackupPanel
         aiCoachingHistory={localAICoachingHistory}
         managerActions={managerActionRecords}
         monthlyReports={localMonthlyReportHistory}
+        messageQueue={messageQueueItems}
+        messageSendHistory={messageSendHistory}
+        operationLogs={operationLogs}
         onRestored={refreshOperationDataAfterRestore}
         onAudit={(actionType, summary) => {
           void audit(actionType, summary);
         }}
       />
       <OperationMigrationPanel onMigrate={migrateLocalOperationData} />
-      <OperationLogsPanel refreshKey={operationLogRevision} />
+      <OperationLogsPanel refreshKey={operationLogRevision} onLoaded={handleOperationLogsLoaded} />
 
       <div className="dashboard-topic-list">
         <details className="dashboard-topic" id="admin-topic-briefing" open={openAdminTopics.briefing}>
