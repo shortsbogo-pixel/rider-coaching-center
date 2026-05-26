@@ -1,14 +1,5 @@
 import { useState } from "react";
-import { getAuthHeader } from "../../utils/authStore";
-
-export interface AIStatusResult {
-  ollamaConnected: boolean;
-  model: string;
-  gemmaResponding: boolean;
-  checkedAt: string;
-  fallbackUsed: boolean;
-  message: string;
-}
+import { fetchAIStatus, type AIStatusResult } from "../../utils/aiCoachingApi";
 
 function formatDateTime(value?: string) {
   if (!value) return "-";
@@ -25,11 +16,7 @@ export function AIStatusPanel({ onChecked }: { onChecked?: (status: AIStatusResu
     setErrorMessage("");
 
     try {
-      const response = await fetch("/api/ai-coaching/status", {
-        headers: getAuthHeader()
-      });
-      if (!response.ok) throw new Error("AI 상태 확인 API 호출 실패");
-      const nextStatus = (await response.json()) as AIStatusResult;
+      const nextStatus = await fetchAIStatus();
       setStatus(nextStatus);
       onChecked?.(nextStatus);
     } catch (error) {

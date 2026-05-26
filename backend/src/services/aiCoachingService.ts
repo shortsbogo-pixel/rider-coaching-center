@@ -18,6 +18,8 @@ interface AICoachingOutput {
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:e2b";
+const OLLAMA_NUM_CTX = readPositiveInt(process.env.OLLAMA_NUM_CTX, 1024);
+const OLLAMA_NUM_PREDICT = readPositiveInt(process.env.OLLAMA_NUM_PREDICT, 300);
 
 export interface OllamaStatusResult {
   ollamaConnected: boolean;
@@ -26,6 +28,37 @@ export interface OllamaStatusResult {
   checkedAt: string;
   fallbackUsed: boolean;
   message: string;
+}
+
+function readPositiveInt(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+export function buildOllamaGenerateRequestBody(prompt: string) {
+  return {
+    model: OLLAMA_MODEL,
+    prompt,
+    stream: false,
+    options: {
+      temperature: 0.7,
+      num_ctx: OLLAMA_NUM_CTX,
+      num_predict: OLLAMA_NUM_PREDICT
+    }
+  };
+}
+
+export function buildOllamaStatusRequestBody() {
+  return {
+    model: OLLAMA_MODEL,
+    prompt: "Reply with OK only.",
+    stream: false,
+    options: {
+      temperature: 0,
+      num_ctx: OLLAMA_NUM_CTX,
+      num_predict: 8
+    }
+  };
 }
 
 // 기본 템플릿 메시지 생성
@@ -69,19 +102,13 @@ async function generateWithOllama(input: AICoachingInput): Promise<AICoachingOut
 
   // apply a short timeout so batch requests don't hang when Ollama is unreachable
   const controller = new AbortController();
-  const timeoutMs = Number(process.env.OLLAMA_TIMEOUT_MS ?? 3000);
+  const timeoutMs = readPositiveInt(process.env.OLLAMA_TIMEOUT_MS, 30000);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: OLLAMA_MODEL,
-      prompt,
-      stream: false,
-      temperature: 0.7,
-      num_predict: 200
-    }),
+    body: JSON.stringify(buildOllamaGenerateRequestBody(prompt)),
     signal: controller.signal
   }).finally(() => clearTimeout(timeout));
 
@@ -237,20 +264,14 @@ export function getDefaultCoachingMessages(input: AICoachingInput): AICoachingOu
 export async function checkOllamaStatus(): Promise<OllamaStatusResult> {
   const checkedAt = new Date().toISOString();
   const controller = new AbortController();
-  const timeoutMs = Number(process.env.OLLAMA_STATUS_TIMEOUT_MS ?? 2500);
+  const timeoutMs = readPositiveInt(process.env.OLLAMA_STATUS_TIMEOUT_MS, 30000);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: OLLAMA_MODEL,
-        prompt: "Reply with OK only.",
-        stream: false,
-        temperature: 0,
-        num_predict: 8
-      }),
+      body: JSON.stringify(buildOllamaStatusRequestBody()),
       signal: controller.signal
     }).finally(() => clearTimeout(timeout));
 
