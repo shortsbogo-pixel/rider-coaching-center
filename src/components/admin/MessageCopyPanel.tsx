@@ -3,10 +3,12 @@ import { formatKakaoRiderMessage, formatSmsRiderMessage } from "../../utils/ride
 
 interface MessageCopyPanelProps {
   riderName: string;
+  weekKey?: string;
   riderMessage: string;
   currentWeekCompleted: number;
   changeRate: number;
   riskLevel: string;
+  onCopied?: (payload: { copyType: CopyType; text: string; riderName: string; weekKey?: string }) => void;
 }
 
 type CopyType = "kakao" | "sms";
@@ -16,7 +18,7 @@ const copyLabels: Record<CopyType, string> = {
   sms: "문자용"
 };
 
-export function MessageCopyPanel({ riderName, riderMessage, currentWeekCompleted, changeRate, riskLevel }: MessageCopyPanelProps) {
+export function MessageCopyPanel({ riderName, weekKey, riderMessage, currentWeekCompleted, changeRate, riskLevel, onCopied }: MessageCopyPanelProps) {
   const defaultKakaoText = useMemo(
     () => formatKakaoRiderMessage({ riderName, riderMessage, currentWeekCompleted, changeRate, riskLevel }),
     [changeRate, currentWeekCompleted, riderMessage, riderName, riskLevel]
@@ -43,6 +45,7 @@ export function MessageCopyPanel({ riderName, riderMessage, currentWeekCompleted
       await navigator.clipboard.writeText(text);
       setFailedType(null);
       setStatus(`${copyLabels[type]} 복사 완료`);
+      onCopied?.({ copyType: type, text, riderName, weekKey });
       window.setTimeout(() => setStatus(""), 1800);
     } catch {
       setFailedType(type);

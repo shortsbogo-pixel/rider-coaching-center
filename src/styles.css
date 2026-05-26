@@ -1110,6 +1110,15 @@ input {
   .operation-panel-title {
     flex-direction: column;
   }
+  .operation-storage-status,
+  .operation-log-card div,
+  .operation-migration-result {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .operation-log-filter {
+    width: 100%;
+  }
   .operation-status-grid,
   .operation-check-grid {
     grid-template-columns: 1fr;
@@ -1661,6 +1670,106 @@ input {
   font: inherit;
   line-height: 1.5;
   resize: vertical;
+}
+
+.operation-storage-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.operation-storage-status p {
+  margin: 0;
+  color: #65758a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.operation-storage-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.operation-storage-badge.server {
+  background: #ecfdf5;
+  color: #067647;
+}
+
+.operation-storage-badge.local {
+  background: #fff7ed;
+  color: #b45309;
+}
+
+.operation-storage-badge.failed {
+  background: #fef2f2;
+  color: #b42318;
+}
+
+.operation-log-filter {
+  min-width: 160px;
+}
+
+.operation-log-list,
+.operation-migration-panel,
+.operation-migration-result {
+  display: grid;
+  gap: 10px;
+}
+
+.operation-log-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #dfe6f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.operation-log-card div,
+.operation-migration-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.operation-log-card strong {
+  color: #17324d;
+  font-size: 13px;
+}
+
+.operation-log-card span,
+.operation-log-card small,
+.operation-empty-message {
+  color: #65758a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.operation-log-card p {
+  margin: 0;
+  color: #405166;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.operation-migration-result span {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #dfe6f0;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #26374a;
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
 }
 
 .ai-status-panel,

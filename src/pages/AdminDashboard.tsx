@@ -12,6 +12,9 @@ import { MessageCopyPanel } from "../components/admin/MessageCopyPanel";
 import { MonthlyOperationReportPanel } from "../components/admin/MonthlyOperationReport";
 import { OperationBackupPanel } from "../components/admin/OperationBackupPanel";
 import { OperationDataCheckPanel } from "../components/admin/OperationDataCheckPanel";
+import { OperationLogsPanel } from "../components/admin/OperationLogsPanel";
+import { OperationMigrationPanel } from "../components/admin/OperationMigrationPanel";
+import { OperationStorageStatus } from "../components/admin/OperationStorageStatus";
 import { RiskBadge } from "../components/admin/RiskBadge";
 import { WeeklyAIBriefingPanel } from "../components/admin/WeeklyAIBriefingPanel";
 import type { UploadedWeekSummary } from "../types/newWeekBriefing";
@@ -24,6 +27,7 @@ import type {
   LocalWeeklyAIBriefingEntry,
   WeeklyAIBriefingResult
 } from "../types/aiCoaching";
+import type { MigrationResult, OperationActionType, OperationSaveStatus } from "../types/operation";
 import { getAuthHeader } from "../utils/authStore";
 import {
   createAICoachingHistoryEntry,
@@ -45,7 +49,9 @@ import {
   type LocalMonthlyReportEntry
 } from "../utils/monthlyReportHistory";
 import { buildLunchMissionBrief, getUploadHealth, getWeakestAction } from "../utils/newWeekBriefingAnalyzer";
-import { readManagerActionChecklistRecords } from "../utils/managerActionChecklist";
+import { readManagerActionChecklistRecords, saveManagerActionChecklist } from "../utils/managerActionChecklist";
+import type { ManagerActionChecklistRecord } from "../utils/managerActionChecklist";
+import { operationApi, writeOperationLog } from "../utils/operationApi";
 import { buildOperationDataCheckItems } from "../utils/operationDataValidator";
 import { buildRiderMetrics, getGradeLabel } from "../utils/scoring";
 import { buildWeeklyBriefingSummary, createTemplateWeeklyAIBriefing } from "../utils/weeklyBriefingSummary";
@@ -553,6 +559,9 @@ export function AdminDashboard() {
   const [monthlyReportCopyStatus, setMonthlyReportCopyStatus] = useState("");
   const [monthlyReportCopyFailed, setMonthlyReportCopyFailed] = useState(false);
   const [monthlyReportManualText, setMonthlyReportManualText] = useState("");
+  const [operationSaveStatus, setOperationSaveStatus] = useState<OperationSaveStatus>("server");
+  const [operationSaveDetail, setOperationSaveDetail] = useState("서버 저장을 우선 사용합니다.");
+  const [operationLogRevision, setOperationLogRevision] = useState(0);
 
   useEffect(() => {
     fetch("/api/uploads")
@@ -573,6 +582,34 @@ export function AdminDashboard() {
       .then((response) => response.json())
       .then((data) => setAllMetrics(data as RiderMetrics[]))
       .catch(() => setAllMetrics(fallbackMetrics));
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([
+      operationApi.getAICoachingHistory(),
+      operationApi.getWeeklyBriefings(),
+      operationApi.getMonthlyReports()
+    ])
+      .then(([history, weeklyBriefings, monthlyReports]) => {
+        if (!mounted) return;
+        setLocalAICoachingHistory(history);
+        setLocalWeeklyBriefingHistory(weeklyBriefings);
+        setLocalMonthlyReportHistory(monthlyReports);
+        setOperationSaveStatus("server");
+        setOperationSaveDetail("서버 저장소에서 운영 데이터를 불러왔습니다.");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        refreshLocalAICoachingHistory();
+        refreshLocalWeeklyBriefingHistory();
+        refreshLocalMonthlyReportHistory();
+        setOperationSaveStatus("local");
+        setOperationSaveDetail("서버 조회 실패로 로컬 임시 데이터를 사용합니다.");
+      });
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -834,6 +871,125 @@ export function AdminDashboard() {
     setManagerActionRevision((value) => value + 1);
   }
 
+  function setSaveStatus(status: OperationSaveStatus, detail: string) {
+    setOperationSaveStatus(status);
+    setOperationSaveDetail(detail);
+  }
+
+  async function audit(actionType: OperationActionType, summary: string, extra?: { riderName?: string; weekKey?: string; monthKey?: string }) {
+    await writeOperationLog({ actionType, summary, ...extra });
+    setOperationLogRevision((value) => value + 1);
+  }
+
+  async function saveAICoachingEntry(entry: LocalAICoachingHistoryEntry, actionType: OperationActionType = "AI_COACHING_GENERATED") {
+    try {
+      await operationApi.saveAICoachingHistory(entry);
+      saveAICoachingHistoryEntry(entry);
+      setLocalAICoachingHistory((current) => [...current.filter((item) => item.id !== entry.id), entry]);
+      setSaveStatus("server", "AI 코칭 이력을 서버에 저장했습니다.");
+      await audit(actionType, `${entry.riderName} AI 코칭 생성`, { riderName: entry.riderName, weekKey: entry.weekKey });
+      return true;
+    } catch {
+      const saved = saveAICoachingHistoryEntry(entry);
+      if (saved) {
+        refreshLocalAICoachingHistory();
+        setSaveStatus("local", "서버 저장 실패로 AI 코칭 이력을 로컬에 임시 저장했습니다.");
+      } else {
+        setLocalAICoachingHistory((current) => [...current, entry]);
+        setSaveStatus("failed", "AI 코칭 이력 저장에 실패했습니다.");
+      }
+      return false;
+    }
+  }
+
+  async function saveChecklistRecord(record: ManagerActionChecklistRecord) {
+    try {
+      await operationApi.saveActionChecklist(record);
+      saveManagerActionChecklist(record.riderName, record.weekKey, record.checkedItems);
+      setManagerActionRevision((value) => value + 1);
+      setSaveStatus("server", "관리자 체크리스트를 서버에 저장했습니다.");
+      await audit("CHECKLIST_UPDATED", `${record.riderName} 체크리스트 변경`, { riderName: record.riderName, weekKey: record.weekKey });
+      return true;
+    } catch {
+      const saved = false;
+      setSaveStatus(saved ? "local" : "local", "서버 저장 실패로 체크리스트를 로컬에 임시 저장합니다.");
+      return false;
+    }
+  }
+
+  async function saveWeeklyBriefingEntry(entry: LocalWeeklyAIBriefingEntry) {
+    try {
+      await operationApi.saveWeeklyBriefing(entry);
+      saveWeeklyAIBriefingEntry(entry);
+      setLocalWeeklyBriefingHistory((current) => [...current.filter((item) => item.id !== entry.id), entry]);
+      setSaveStatus("server", "주간 AI 브리핑을 서버에 저장했습니다.");
+      await audit("WEEKLY_BRIEFING_GENERATED", `${entry.weekKey} 주간 AI 브리핑 생성`, { weekKey: entry.weekKey });
+      return true;
+    } catch {
+      const saved = saveWeeklyAIBriefingEntry(entry);
+      if (saved) {
+        refreshLocalWeeklyBriefingHistory();
+        setSaveStatus("local", "서버 저장 실패로 주간 브리핑을 로컬에 임시 저장했습니다.");
+      } else {
+        setLocalWeeklyBriefingHistory((current) => [entry, ...current]);
+        setSaveStatus("failed", "주간 브리핑 저장에 실패했습니다.");
+      }
+      return false;
+    }
+  }
+
+  async function saveMonthlyReport(entry: LocalMonthlyReportEntry) {
+    try {
+      await operationApi.saveMonthlyReport(entry);
+      saveMonthlyReportEntry(entry);
+      setLocalMonthlyReportHistory((current) => [...current.filter((item) => item.id !== entry.id), entry]);
+      setSaveStatus("server", "월간 운영 리포트를 서버에 저장했습니다.");
+      await audit("MONTHLY_REPORT_GENERATED", `${entry.monthKey} 월간 운영 리포트 생성`, { monthKey: entry.monthKey });
+      return true;
+    } catch {
+      const saved = saveMonthlyReportEntry(entry);
+      if (saved) {
+        refreshLocalMonthlyReportHistory();
+        setSaveStatus("local", "서버 저장 실패로 월간 리포트를 로컬에 임시 저장했습니다.");
+      } else {
+        setLocalMonthlyReportHistory((current) => [entry, ...current]);
+        setSaveStatus("failed", "월간 리포트 저장에 실패했습니다.");
+      }
+      return false;
+    }
+  }
+
+  async function migrateLocalOperationData(): Promise<MigrationResult> {
+    const groups = [
+      { items: readAICoachingHistoryEntries(), save: operationApi.migrateAICoachingHistory },
+      { items: readManagerActionChecklistRecords(), save: operationApi.migrateActionChecklists },
+      { items: readWeeklyAIBriefingEntries(), save: operationApi.migrateWeeklyBriefings },
+      { items: readMonthlyReportEntries(), save: operationApi.migrateMonthlyReports }
+    ];
+    const result: MigrationResult = { successCount: 0, failedCount: 0, skippedCount: 0 };
+
+    for (const group of groups) {
+      if (!group.items.length) {
+        result.skippedCount += 1;
+        continue;
+      }
+      try {
+        await (group.save as (items: unknown[]) => Promise<unknown>)(group.items);
+        result.successCount += group.items.length;
+      } catch {
+        result.failedCount += group.items.length;
+      }
+    }
+
+    if (result.failedCount > 0) {
+      setSaveStatus("local", "일부 로컬 데이터를 서버로 이전하지 못했습니다.");
+    } else {
+      setSaveStatus("server", "로컬 데이터를 서버 저장소로 이전했습니다.");
+    }
+    await audit("LOCAL_DATA_MIGRATED", `로컬 데이터 서버 이전: 성공 ${result.successCount}건, 실패 ${result.failedCount}건`);
+    return result;
+  }
+
   function buildCurrentWeeklyAIBriefingSummary(coachingHistory = localAICoachingHistory) {
     return buildWeeklyBriefingSummary({
       weekKey: selectedWeekKey,
@@ -887,15 +1043,9 @@ export function AdminDashboard() {
     };
   }
 
-  function recordWeeklyAIBriefing(result: WeeklyAIBriefingResult, summary = weeklyAIBriefingSummary) {
+  async function recordWeeklyAIBriefing(result: WeeklyAIBriefingResult, summary = weeklyAIBriefingSummary) {
     const entry = createWeeklyAIBriefingEntry({ ...result, summary });
-    const saved = saveWeeklyAIBriefingEntry(entry);
-    if (saved) {
-      refreshLocalWeeklyBriefingHistory();
-    } else {
-      setLocalWeeklyBriefingHistory((current) => [entry, ...current]);
-      setWeeklyBriefingError("브리핑은 화면에 표시되지만 브라우저 저장소에는 저장하지 못했습니다.");
-    }
+    await saveWeeklyBriefingEntry(entry);
     return entry;
   }
 
@@ -918,15 +1068,9 @@ export function AdminDashboard() {
     };
   }
 
-  function recordMonthlyOperationReport(report: MonthlyOperationReport) {
+  async function recordMonthlyOperationReport(report: MonthlyOperationReport) {
     const entry = createMonthlyReportEntry(report);
-    const saved = saveMonthlyReportEntry(entry);
-    if (saved) {
-      refreshLocalMonthlyReportHistory();
-    } else {
-      setLocalMonthlyReportHistory((current) => [entry, ...current]);
-      setMonthlyReportError("리포트는 화면에 표시하지만 브라우저 저장소에는 저장하지 못했습니다.");
-    }
+    await saveMonthlyReport(entry);
     return entry;
   }
 
@@ -982,10 +1126,10 @@ export function AdminDashboard() {
 
       const fallback = createTemplateWeeklyAIBriefing(selectedWeekKey);
       const result = normalizeWeeklyBriefingResult(await response.json(), fallback);
-      recordWeeklyAIBriefing(result, summary);
+      await recordWeeklyAIBriefing(result, summary);
     } catch {
       const fallback = createTemplateWeeklyAIBriefing(selectedWeekKey);
-      recordWeeklyAIBriefing(fallback, summary);
+      await recordWeeklyAIBriefing(fallback, summary);
       setWeeklyBriefingError("AI 브리핑 API 연결 실패로 기본 템플릿을 저장했습니다.");
     } finally {
       setWeeklyBriefingLoading(false);
@@ -1018,7 +1162,7 @@ export function AdminDashboard() {
     return aiResultById[key] ?? (riderName ? getLatestLocalResultFor(riderName, weekKey) : undefined);
   }
 
-  function recordAICoachingResult(params: {
+  async function recordAICoachingResult(params: {
     key: string;
     riderName: string;
     weekKey: string;
@@ -1044,8 +1188,7 @@ export function AdminDashboard() {
       source: params.source
     });
 
-    saveAICoachingHistoryEntry(entry);
-    refreshLocalAICoachingHistory();
+    await saveAICoachingEntry(entry);
     setAiResultById((current) => ({
       ...current,
       [params.key]: {
@@ -1091,7 +1234,7 @@ export function AdminDashboard() {
       }
 
       if (!data) {
-        recordAICoachingResult({
+        await recordAICoachingResult({
           key,
           riderName,
           weekKey,
@@ -1105,7 +1248,7 @@ export function AdminDashboard() {
           source: "local-template"
         });
       } else {
-        recordAICoachingResult({
+        await recordAICoachingResult({
           key,
           riderName,
           weekKey,
@@ -1129,7 +1272,7 @@ export function AdminDashboard() {
         });
         const data = tpl.ok ? await tpl.json() : null;
         if (data) {
-          recordAICoachingResult({
+          await recordAICoachingResult({
             key,
             riderName,
             weekKey,
@@ -1144,7 +1287,7 @@ export function AdminDashboard() {
           });
         }
       } catch {
-        recordAICoachingResult({
+        await recordAICoachingResult({
           key,
           riderName,
           weekKey,
@@ -1193,10 +1336,10 @@ export function AdminDashboard() {
 
       const fallback = createTemplateMonthlyOperationReport(summary);
       const result = normalizeMonthlyOperationReport(await response.json(), fallback);
-      recordMonthlyOperationReport(result);
+      await recordMonthlyOperationReport(result);
     } catch {
       const fallback = createTemplateMonthlyOperationReport(summary);
-      recordMonthlyOperationReport(fallback);
+      await recordMonthlyOperationReport(fallback);
       setMonthlyReportError("AI 리포트 API 연결 실패로 기본 템플릿을 저장했습니다.");
     } finally {
       setMonthlyReportLoading(false);
@@ -1264,7 +1407,8 @@ export function AdminDashboard() {
         error?: string;
       }>;
 
-      const nextResults = results.reduce<Record<string, AICoachingResultState>>((acc, item) => {
+      const nextResults: Record<string, AICoachingResultState> = {};
+      for (const item of results) {
         const sourceItem = items.find((candidate) => candidate.riderId === item.riderId);
         const source = item.isTemplate ? "template" : "gemma4";
         const entry = createAICoachingHistoryEntry({
@@ -1279,19 +1423,17 @@ export function AdminDashboard() {
           isTemplate: item.isTemplate,
           source
         });
-        saveAICoachingHistoryEntry(entry);
-        acc[`rider-${item.riderId}`] = {
+        await saveAICoachingEntry(entry);
+        nextResults[`rider-${item.riderId}`] = {
           adminMessage: item.adminMessage,
           riderMessage: item.riderMessage,
           isTemplate: item.isTemplate,
           source,
           createdAt: entry.createdAt
         };
-        return acc;
-      }, {});
+      }
 
       setAiResultById((current) => ({ ...current, ...nextResults }));
-      refreshLocalAICoachingHistory();
       setBatchProgress({ completed: results.length, total: results.length });
 
       const failures = results
@@ -1478,14 +1620,25 @@ export function AdminDashboard() {
         <p>브리핑의 라이더 카드와 위험도 요약 리스트에만 적용됩니다.</p>
       </section>
 
-      <AIStatusPanel />
+      <OperationStorageStatus status={operationSaveStatus} detail={operationSaveDetail} />
+      <AIStatusPanel
+        onChecked={(status) => {
+          void operationApi.saveAIStatusResult({ id: `ai-status-${status.checkedAt}`, ...status });
+          void audit("AI_STATUS_CHECKED", status.message || "AI 상태 점검 실행");
+        }}
+      />
       <OperationDataCheckPanel items={operationDataCheckItems} />
       <OperationBackupPanel
         aiCoachingHistory={localAICoachingHistory}
         managerActions={managerActionRecords}
         monthlyReports={localMonthlyReportHistory}
         onRestored={refreshOperationDataAfterRestore}
+        onAudit={(actionType, summary) => {
+          void audit(actionType, summary);
+        }}
       />
+      <OperationMigrationPanel onMigrate={migrateLocalOperationData} />
+      <OperationLogsPanel refreshKey={operationLogRevision} />
 
       <div className="dashboard-topic-list">
         <details className="dashboard-topic" id="admin-topic-briefing" open={openAdminTopics.briefing}>
@@ -1636,6 +1789,7 @@ export function AdminDashboard() {
                     riderName={cardRiderName}
                     weekKey={selectedWeekKey}
                     onSaved={() => setManagerActionRevision((value) => value + 1)}
+                    onSaveRecord={saveChecklistRecord}
                   />
                 ) : null}
                 {/* show result messages if present */}
@@ -1674,10 +1828,22 @@ export function AdminDashboard() {
                       </div>
                       <MessageCopyPanel
                         riderName={cardRiderName ?? "라이더"}
+                        weekKey={selectedWeekKey}
                         riderMessage={visibleAiResult.riderMessage}
                         currentWeekCompleted={card.currentCompleted ?? 0}
                         changeRate={card.changeRatePercent ?? 0}
                         riskLevel={card.riskLevel ?? "활용"}
+                        onCopied={({ copyType, text, riderName, weekKey }) => {
+                          void operationApi.saveMessageCopy({
+                            id: `message-copy-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                            copyType,
+                            text,
+                            riderName,
+                            weekKey,
+                            createdAt: new Date().toISOString()
+                          });
+                          void audit("MESSAGE_COPIED", `${riderName} ${copyType === "kakao" ? "카톡용" : "문자용"} 문구 복사`, { riderName, weekKey });
+                        }}
                       />
                     </div>
                   </div>
@@ -2036,6 +2202,7 @@ export function AdminDashboard() {
                     riderName={metric.displayName}
                     weekKey={selectedWeekKey}
                     onSaved={() => setManagerActionRevision((value) => value + 1)}
+                    onSaveRecord={saveChecklistRecord}
                   />
                 </div>
               </div>

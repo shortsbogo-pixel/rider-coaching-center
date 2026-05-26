@@ -4,13 +4,15 @@ import {
   managerActionChecklistItems,
   readManagerActionChecklist,
   saveManagerActionChecklist,
+  type ManagerActionChecklistRecord,
   type ManagerActionChecklistItemId
 } from "../../utils/managerActionChecklist";
 
 interface ManagerActionChecklistProps {
   riderName: string;
   weekKey: string;
-  onSaved?: () => void;
+  onSaved?: (record: ManagerActionChecklistRecord) => void;
+  onSaveRecord?: (record: ManagerActionChecklistRecord) => Promise<boolean>;
 }
 
 function statusLabel(status: ReturnType<typeof checklistCompletion>["status"]) {
@@ -19,19 +21,29 @@ function statusLabel(status: ReturnType<typeof checklistCompletion>["status"]) {
   return "미진행";
 }
 
-export function ManagerActionChecklist({ riderName, weekKey, onSaved }: ManagerActionChecklistProps) {
+export function ManagerActionChecklist({ riderName, weekKey, onSaved, onSaveRecord }: ManagerActionChecklistProps) {
   const initialRecord = useMemo(() => readManagerActionChecklist(riderName, weekKey), [riderName, weekKey]);
   const [checkedItems, setCheckedItems] = useState<ManagerActionChecklistItemId[]>(initialRecord.checkedItems);
   const completion = checklistCompletion(checkedItems);
 
+  async function persist(next: ManagerActionChecklistItemId[]) {
+    const record: ManagerActionChecklistRecord = {
+      riderName,
+      weekKey,
+      checkedItems: next,
+      updatedAt: new Date().toISOString()
+    };
+    const serverSaved = onSaveRecord ? await onSaveRecord(record) : false;
+    if (!serverSaved) {
+      saveManagerActionChecklist(riderName, weekKey, next);
+    }
+    onSaved?.(record);
+  }
+
   function toggleItem(itemId: ManagerActionChecklistItemId) {
-    setCheckedItems((current) => {
-      const next = current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId];
-      if (saveManagerActionChecklist(riderName, weekKey, next)) {
-        onSaved?.();
-      }
-      return next;
-    });
+    const next = checkedItems.includes(itemId) ? checkedItems.filter((id) => id !== itemId) : [...checkedItems, itemId];
+    setCheckedItems(next);
+    void persist(next);
   }
 
   return (

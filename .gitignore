@@ -8,6 +8,7 @@ backend/src/data/parsed/*
 !backend/src/data/uploads/.gitkeep
 !backend/src/data/parsed/.gitkeep
 backend/src/data/*.json
+backend/data/*.json
 node_modules/
 .env.local
 dist/

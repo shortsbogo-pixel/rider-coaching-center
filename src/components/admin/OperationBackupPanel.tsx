@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import type { LocalAICoachingHistoryEntry } from "../../types/aiCoaching";
+import type { OperationActionType } from "../../types/operation";
 import type { ManagerActionChecklistRecord } from "../../utils/managerActionChecklist";
 import type { LocalMonthlyReportEntry } from "../../utils/monthlyReportHistory";
 import { createAICoachingHistoryCsv, createManagerActionsCsv, downloadTextFile } from "../../utils/exportCsv";
@@ -10,9 +11,10 @@ interface OperationBackupPanelProps {
   managerActions: ManagerActionChecklistRecord[];
   monthlyReports: LocalMonthlyReportEntry[];
   onRestored: () => void;
+  onAudit?: (actionType: OperationActionType, summary: string) => void;
 }
 
-export function OperationBackupPanel({ aiCoachingHistory, managerActions, monthlyReports, onRestored }: OperationBackupPanelProps) {
+export function OperationBackupPanel({ aiCoachingHistory, managerActions, monthlyReports, onRestored, onAudit }: OperationBackupPanelProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [restoreMode, setRestoreMode] = useState<OperationRestoreMode>("merge");
   const [statusMessage, setStatusMessage] = useState("");
@@ -32,6 +34,7 @@ export function OperationBackupPanel({ aiCoachingHistory, managerActions, monthl
     const backup = createOperationBackup();
     downloadTextFile(`rider-coaching-backup-${getDateStamp()}.json`, JSON.stringify(backup, null, 2), "application/json;charset=utf-8");
     setStatus("운영 데이터 백업 파일을 생성했습니다.");
+    onAudit?.("BACKUP_DOWNLOADED", "운영 데이터 백업 파일 생성");
   }
 
   function exportAICoachingCsv() {
@@ -41,6 +44,7 @@ export function OperationBackupPanel({ aiCoachingHistory, managerActions, monthl
     }
     downloadTextFile(`ai-coaching-history-${getDateStamp()}.csv`, createAICoachingHistoryCsv(aiCoachingHistory), "text/csv;charset=utf-8");
     setStatus("AI 코칭 이력 CSV를 내보냈습니다.");
+    onAudit?.("CSV_EXPORTED", "AI 코칭 이력 CSV 내보내기");
   }
 
   function exportManagerActionsCsv() {
@@ -50,6 +54,7 @@ export function OperationBackupPanel({ aiCoachingHistory, managerActions, monthl
     }
     downloadTextFile(`manager-action-checklist-${getDateStamp()}.csv`, createManagerActionsCsv(managerActions), "text/csv;charset=utf-8");
     setStatus("관리자 액션 체크리스트 CSV를 내보냈습니다.");
+    onAudit?.("CSV_EXPORTED", "관리자 액션 체크리스트 CSV 내보내기");
   }
 
   function exportMonthlyReportsJson() {
@@ -59,12 +64,14 @@ export function OperationBackupPanel({ aiCoachingHistory, managerActions, monthl
     }
     downloadTextFile(`monthly-operation-reports-${getDateStamp()}.json`, JSON.stringify(monthlyReports, null, 2), "application/json;charset=utf-8");
     setStatus("월간 운영 리포트 JSON을 내보냈습니다.");
+    onAudit?.("CSV_EXPORTED", "월간 운영 리포트 JSON 내보내기");
   }
 
   function exportAllOperationJson() {
     const backup = createOperationBackup();
     downloadTextFile(`rider-operation-data-${getDateStamp()}.json`, JSON.stringify(backup, null, 2), "application/json;charset=utf-8");
     setStatus("전체 운영 데이터 JSON을 내보냈습니다.");
+    onAudit?.("CSV_EXPORTED", "전체 운영 데이터 JSON 내보내기");
   }
 
   async function handleRestoreFile(file?: File) {
@@ -88,6 +95,7 @@ export function OperationBackupPanel({ aiCoachingHistory, managerActions, monthl
 
       setStatus(result.message);
       onRestored();
+      onAudit?.("DATA_RESTORED", "운영 데이터 복원 실행");
     } catch (error) {
       setError(error instanceof Error ? `복원 실패: ${error.message}` : "복원 실패: JSON 파일을 읽을 수 없습니다.");
     } finally {

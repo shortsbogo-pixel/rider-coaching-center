@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { getAuthHeader } from "../../utils/authStore";
 
-interface AIStatusResult {
+export interface AIStatusResult {
   ollamaConnected: boolean;
   model: string;
   gemmaResponding: boolean;
@@ -15,7 +15,7 @@ function formatDateTime(value?: string) {
   return new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "medium" }).format(new Date(value));
 }
 
-export function AIStatusPanel() {
+export function AIStatusPanel({ onChecked }: { onChecked?: (status: AIStatusResult) => void }) {
   const [status, setStatus] = useState<AIStatusResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -29,16 +29,20 @@ export function AIStatusPanel() {
         headers: getAuthHeader()
       });
       if (!response.ok) throw new Error("AI 상태 확인 API 호출 실패");
-      setStatus((await response.json()) as AIStatusResult);
+      const nextStatus = (await response.json()) as AIStatusResult;
+      setStatus(nextStatus);
+      onChecked?.(nextStatus);
     } catch (error) {
-      setStatus({
+      const fallbackStatus: AIStatusResult = {
         ollamaConnected: false,
         model: "-",
         gemmaResponding: false,
         checkedAt: new Date().toISOString(),
         fallbackUsed: true,
         message: error instanceof Error ? error.message : "AI 상태 확인 실패"
-      });
+      };
+      setStatus(fallbackStatus);
+      onChecked?.(fallbackStatus);
       setErrorMessage("Ollama 또는 Gemma 4가 실행 중인지 확인 필요");
     } finally {
       setLoading(false);
