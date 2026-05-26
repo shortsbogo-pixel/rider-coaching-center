@@ -80,28 +80,31 @@ export function OperationLogsPanel({ refreshKey = 0 }: { refreshKey?: number }) 
         </label>
       </div>
 
-      {errorMessage ? <p className="operation-error-message">{errorMessage}</p> : null}
-      <div className="operation-log-list">
-        {visibleLogs.length ? (
-          visibleLogs.slice(0, 30).map((log) => (
-            <article className="operation-log-card" key={log.id}>
-              <div>
-                <strong>{actionLabel(log.actionType)}</strong>
-                <span>{formatDateTime(log.createdAt)}</span>
-              </div>
-              <p>{log.summary}</p>
-              <small>
-                {log.actorName} · {log.actorRole}
-                {log.riderName ? ` · ${log.riderName}` : ""}
-                {log.weekKey ? ` · ${log.weekKey}` : ""}
-                {log.monthKey ? ` · ${log.monthKey}` : ""}
-              </small>
-            </article>
-          ))
-        ) : (
-          <p className="operation-empty-message">표시할 운영 로그가 없습니다.</p>
-        )}
-      </div>
+      {errorMessage ? (
+        <p className="operation-error-message">{errorMessage}</p>
+      ) : (
+        <div className="operation-log-list">
+          {visibleLogs.length ? (
+            visibleLogs.slice(0, 30).map((log) => (
+              <article className="operation-log-card" key={log.id}>
+                <div>
+                  <strong>{actionLabel(log.actionType)}</strong>
+                  <span>{formatDateTime(log.createdAt)}</span>
+                </div>
+                <p>{log.summary}</p>
+                <small>
+                  {log.actorName} · {log.actorRole}
+                  {log.riderName ? ` · ${log.riderName}` : ""}
+                  {log.weekKey ? ` · ${log.weekKey}` : ""}
+                  {log.monthKey ? ` · ${log.monthKey}` : ""}
+                </small>
+              </article>
+            ))
+          ) : (
+            <p className="operation-empty-message">아직 운영 로그가 없습니다.</p>
+          )}
+        </div>
+      )}
     </section>
   );
 }

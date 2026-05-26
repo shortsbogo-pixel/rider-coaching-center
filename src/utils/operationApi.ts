@@ -4,8 +4,37 @@ import type { ManagerActionChecklistRecord } from "./managerActionChecklist";
 import type { LocalMonthlyReportEntry } from "./monthlyReportHistory";
 import { getAuthHeader, getStoredUser } from "./authStore";
 
+type OperationApiEnv = {
+  readonly VITE_API_BASE_URL?: string;
+};
+
+function getOperationApiBaseUrl() {
+  return ((import.meta as ImportMeta & { env?: OperationApiEnv }).env?.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
+}
+
+export function buildOperationApiUrl(path: string, baseUrl = getOperationApiBaseUrl()) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
+  return `${normalizedBaseUrl}/api/operation${normalizedPath}`;
+}
+
+async function readOperationPayload<T>(response: Response): Promise<OperationApiResponse<T>> {
+  try {
+    const payload = (await response.json()) as OperationApiResponse<T>;
+    if (!payload || typeof payload.success !== "boolean") {
+      throw new Error("invalid operation api response");
+    }
+    return payload;
+  } catch (error) {
+    if (error instanceof Error && error.message === "invalid operation api response") {
+      throw error;
+    }
+    throw new Error(`operation api response parse failed (${response.status})`);
+  }
+}
+
 async function requestOperation<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/operation${path}`, {
+  const response = await fetch(buildOperationApiUrl(path), {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -13,7 +42,7 @@ async function requestOperation<T>(path: string, init?: RequestInit): Promise<T>
       ...(init?.headers ?? {})
     }
   });
-  const payload = (await response.json()) as OperationApiResponse<T>;
+  const payload = await readOperationPayload<T>(response);
   if (!response.ok || !payload.success) {
     throw new Error(payload.message || "operation api failed");
   }
