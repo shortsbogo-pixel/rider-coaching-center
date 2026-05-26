@@ -4,20 +4,32 @@ import orders from "../data/sampleOrders.json";
 import riders from "../data/sampleRiders.json";
 import { RiskBadge } from "../components/admin/RiskBadge";
 import { SectionHeader } from "../components/common/SectionHeader";
+import { RiderDataInsight } from "../components/rider/RiderDataInsight";
 import type { AdminNote } from "../types/adminNote";
 import type { OrderRecord } from "../types/order";
 import type { RiderMetrics, RiderProfile } from "../types/rider";
 import { fetchAdminNotes } from "../utils/adminNoteStore";
 import { getAuthHeader } from "../utils/authStore";
+import { generateCoachingMessage } from "../utils/coachingGenerator";
 import { buildRiderMetrics, getGradeLabel } from "../utils/scoring";
 
 const fallbackMetrics = buildRiderMetrics(orders as OrderRecord[], riders as RiderProfile[]);
+
+function getMissionHint(metrics: RiderMetrics) {
+  if (metrics.postLunchRate < 0.15) return "Post_Lunch 14:00~16:30 구간에서 2~3콜을 추가 목표로 잡아보세요.";
+  if (metrics.postDinnerRate < 0.15) return "Post_Dinner 구간에서 짧게라도 운행을 이어가면 다음 등급 방어에 유리합니다.";
+  if (metrics.gradeProgress.remainingToNext > 0) {
+    return `${metrics.gradeProgress.nextLabel}까지 ${metrics.gradeProgress.remainingToNext}건 남았습니다. 피크타임 이후 구간을 붙여 완성도를 높여보세요.`;
+  }
+  return "현재 S급 기준에 도달했습니다. 멀티배달과 포스트구간 유지가 핵심입니다.";
+}
 
 export function RiderAnalysisPage() {
   const [metrics, setMetrics] = useState<RiderMetrics[]>(fallbackMetrics);
   const [notes, setNotes] = useState<AdminNote[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedId, setSelectedId] = useState(fallbackMetrics[0]?.riderId ?? "");
+  const [basisWeek, setBasisWeek] = useState("");
 
   useEffect(() => {
     fetch("/api/riders", { headers: getAuthHeader() })
@@ -32,7 +44,11 @@ export function RiderAnalysisPage() {
 
     fetch("/api/coaching", { headers: getAuthHeader() })
       .then((response) => response.json())
-      .then((data) => fetchAdminNotes(data?.basisWeek || undefined))
+      .then((data) => {
+        const week = data?.basisWeek || "";
+        setBasisWeek(week);
+        return fetchAdminNotes(week || undefined);
+      })
       .then(setNotes)
       .catch(() => setNotes([]));
   }, []);
@@ -44,6 +60,7 @@ export function RiderAnalysisPage() {
   const selected = metrics.find((metric) => metric.riderId === selectedId) ?? filteredMetrics[0] ?? metrics[0];
   const noteByRider = useMemo(() => new Map(notes.map((note) => [note.riderId, note])), [notes]);
   const selectedNote = selected ? noteByRider.get(selected.riderId) : undefined;
+  const selectedCoaching = useMemo(() => (selected ? generateCoachingMessage(selected) : undefined), [selected]);
 
   return (
     <div className="page-stack">
@@ -85,7 +102,8 @@ export function RiderAnalysisPage() {
           })}
         </div>
 
-        {selected ? (
+        {selected && selectedCoaching ? (
+          <div className="analysis-detail-stack">
           <section className="panel rider-detail-panel">
             <div className="analysis-title">
               <div>
@@ -97,52 +115,29 @@ export function RiderAnalysisPage() {
               <RiskBadge level={selected.riskLevel} />
             </div>
 
-            <div className="mini-stat-grid">
-              <div>
-                <span>완료</span>
-                <strong>{selected.totalCompleted}</strong>
-              </div>
-              <div>
-                <span>멀티</span>
-                <strong>{Math.round(selected.multiDeliveryRate * 100)}%</strong>
-              </div>
-              <div>
-                <span>Post_Lunch</span>
-                <strong>{Math.round(selected.postLunchRate * 100)}%</strong>
-              </div>
-              <div>
-                <span>Post_Dinner</span>
-                <strong>{Math.round(selected.postDinnerRate * 100)}%</strong>
-              </div>
-            </div>
-
-            <div className="insight-grid">
-              <div className="insight-card good">
-                <span>강점 구간</span>
-                <strong>{selected.strongSegment}</strong>
-                <p>가장 많은 완료건수가 잡힌 구간입니다.</p>
-              </div>
-              <div className="insight-card warning">
-                <span>보강 구간</span>
-                <strong>{selected.weakestSegment}</strong>
-                <p>미션이나 대기 전략으로 보강할 수 있습니다.</p>
-              </div>
-            </div>
-
             <div className="tag-cloud">
               <span>{selected.validationStatus === "AUTO_ANALYSIS_TARGET" ? "자동 분석 대상" : "기존 라이더 매칭"}</span>
               <span>다음 등급까지 {selected.gradeProgress.remainingToNext}건</span>
               <span>메모 상태: {selectedNote ? "메모 있음" : "메모 없음"}</span>
               <span>누락 지표: {selected.missingMetrics.length ? selected.missingMetrics.join(", ") : "없음"}</span>
             </div>
+          </section>
+
+          <RiderDataInsight
+            metrics={selected}
+            weekKey={basisWeek}
+            missionHint={getMissionHint(selected)}
+            strengths={selectedCoaching.strengths}
+            weaknesses={selectedCoaching.weaknesses}
+          />
 
             {selectedNote ? (
-              <div className="note-panel">
+              <section className="panel note-panel">
                 <strong>관리자 메모</strong>
                 <p>{selectedNote.note}</p>
-              </div>
+              </section>
             ) : null}
-          </section>
+          </div>
         ) : null}
       </div>
     </div>

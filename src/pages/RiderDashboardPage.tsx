@@ -4,10 +4,11 @@ import orders from "../data/sampleOrders.json";
 import riders from "../data/sampleRiders.json";
 import { MetricCard } from "../components/common/MetricCard";
 import { SectionHeader } from "../components/common/SectionHeader";
+import { RiderDataInsight } from "../components/rider/RiderDataInsight";
 import { ScoreRing } from "../components/rider/ScoreRing";
 import { useAuth } from "../hooks/useAuth";
 import type { CustomCoachingMessage } from "../types/coaching";
-import type { DeliveryType, OrderRecord, TimeSegment } from "../types/order";
+import type { OrderRecord } from "../types/order";
 import type { RiderMetrics, RiderProfile } from "../types/rider";
 import { generateCoachingMessage } from "../utils/coachingGenerator";
 import { getAuthHeader } from "../utils/authStore";
@@ -16,9 +17,6 @@ import { buildRiderMetrics, getGradeLabel } from "../utils/scoring";
 import { getLatestWeekKey, sortWeekKeys } from "../utils/weekSelector";
 
 const fallbackMetrics = buildRiderMetrics(orders as OrderRecord[], riders as RiderProfile[]);
-const segments: TimeSegment[] = ["Breakfast", "Lunch_Peak", "Post_Lunch", "Dinner_Peak", "Post_Dinner"];
-const deliveryTypes: DeliveryType[] = ["단건배달", "멀티배달1", "멀티배달2", "멀티배달3", "멀티배달4"];
-
 interface UploadedWeek {
   week: string;
   weekKey?: string;
@@ -181,8 +179,6 @@ export function RiderDashboardPage() {
     );
   }
 
-  const maxSegment = Math.max(...Object.values(metrics.segmentCompleted), 1);
-  const maxDeliveryType = Math.max(...Object.values(metrics.deliveryTypeCompleted), 1);
   const riderMessage = savedCustom?.customMessage || buildRiderFacingMessage(metrics);
 
   return (
@@ -233,6 +229,14 @@ export function RiderDashboardPage() {
         ) : null}
       </section>
 
+      <RiderDataInsight
+        metrics={metrics}
+        weekKey={selectedWeekKey}
+        missionHint={getMissionHint(metrics)}
+        strengths={coaching.strengths}
+        weaknesses={coaching.weaknesses}
+      />
+
       <section className="hero-card">
         <div>
           <p>내 배차 친화 점수</p>
@@ -269,49 +273,6 @@ export function RiderDashboardPage() {
         <p>{getMissionHint(metrics)}</p>
       </section>
 
-      <section className="panel">
-        <h3>시간대별 활동량</h3>
-        <div className="bar-list">
-          {segments.map((segment) => (
-            <div className="bar-row" key={segment}>
-              <span>{segment}</span>
-              <div className="bar-track">
-                <div className="bar-fill" style={{ width: `${(metrics.segmentCompleted[segment] / maxSegment) * 100}%` }} />
-              </div>
-              <strong>{metrics.segmentCompleted[segment]}</strong>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel">
-        <h3>배달타입별 비율</h3>
-        <div className="bar-list">
-          {deliveryTypes.map((deliveryType) => (
-            <div className="bar-row" key={deliveryType}>
-              <span>{deliveryType}</span>
-              <div className="bar-track">
-                <div className="bar-fill teal" style={{ width: `${(metrics.deliveryTypeCompleted[deliveryType] / maxDeliveryType) * 100}%` }} />
-              </div>
-              <strong>{metrics.deliveryTypeCompleted[deliveryType]}</strong>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel">
-        <h3>주요 강점</h3>
-        <div className="tag-cloud">{coaching.strengths.map((item) => <span key={item}>{item}</span>)}</div>
-      </section>
-
-      <section className="panel">
-        <h3>개선 포인트</h3>
-        <div className="tag-cloud warning-tags">
-          {(coaching.weaknesses.length ? coaching.weaknesses : ["현재 뚜렷한 취약 항목이 없습니다."]).map((item) => (
-            <span key={item}>{item}</span>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }

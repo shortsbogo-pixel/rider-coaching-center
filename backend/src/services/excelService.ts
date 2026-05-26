@@ -92,6 +92,24 @@ function asOptionalNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function asOptionalRate(value: unknown): number | undefined {
+  const raw = asString(value)
+    .replace(/,/g, "")
+    .replace(/[％%]/g, "%")
+    .replace(/\s+/g, "")
+    .trim();
+  if (!raw || raw === "-") return undefined;
+
+  const percentValue = raw.endsWith("%") ? Number(raw.slice(0, -1)) : Number(raw);
+  if (!Number.isFinite(percentValue)) return undefined;
+
+  if (Math.abs(percentValue) > 1) {
+    return percentValue / 100;
+  }
+
+  return percentValue;
+}
+
 function asDurationMinutes(value: unknown): number {
   const raw = asString(value);
   if (/^\d+:\d{1,2}$/.test(raw)) {
@@ -248,8 +266,8 @@ function rowToOrder(row: RawRow, week: string, index: number, issues: Validation
     deliveryType: deliveryType ?? "단건배달",
     completedCount,
     weekday: getWeekday(acceptedAtRaw),
-    rejectionRate: asOptionalNumber(getCell(row, ["거절율", "거절률"])),
-    ignoredRate: asOptionalNumber(getCell(row, ["무시율", "무시률"]))
+    rejectionRate: asOptionalRate(getCell(row, ["거절율", "거절률"])),
+    ignoredRate: asOptionalRate(getCell(row, ["무시율", "무시률"]))
   };
 }
 

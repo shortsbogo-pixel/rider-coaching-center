@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import adminNoteRoutes from "./routes/adminNoteRoutes";
+import aiCoachingRoutes from "./routes/aiCoachingRoutes";
 import coachingRoutes from "./routes/coachingRoutes";
 import coachingMessageRoutes from "./routes/coachingMessageRoutes";
 import dataManagementRoutes from "./routes/dataManagementRoutes";
@@ -22,6 +23,7 @@ app.use("/api/riders", riderRoutes);
 app.use("/api/coaching", coachingRoutes);
 app.use("/api/admin-notes", adminNoteRoutes);
 app.use("/api/custom-coaching", coachingMessageRoutes);
+app.use("/api/ai-coaching", aiCoachingRoutes);
 app.use("/api/data-management", dataManagementRoutes);
 
 app.use((error: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

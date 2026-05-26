@@ -151,10 +151,20 @@ export function buildRiderMetrics(orders: OrderRecord[], riders: RiderProfile[] 
     const postLunchRate = totalCompleted ? segmentCompleted.Post_Lunch / totalCompleted : 0;
     const postDinnerRate = totalCompleted ? segmentCompleted.Post_Dinner / totalCompleted : 0;
     const activeWeekdayCount = Object.values(weekdayCompleted).filter((count) => count > 0).length;
-    const hasRejectionMetric = riderOrders.some((order) => (order.rejectionRate ?? 0) > 0 || (order.ignoredRate ?? 0) > 0);
+    const rejectionMetricEntries = riderOrders
+      .map((order) => {
+        if (order.rejectionRate === undefined && order.ignoredRate === undefined) return undefined;
+        const totalRate = (order.rejectionRate ?? 0) + (order.ignoredRate ?? 0);
+        return {
+          totalRate,
+          weight: Math.max(order.completedCount, 1)
+        };
+      })
+      .filter((entry): entry is { totalRate: number; weight: number } => entry !== undefined);
+    const hasRejectionMetric = rejectionMetricEntries.length > 0;
     const rejectionIgnoredRate = hasRejectionMetric
-      ? riderOrders.reduce((sum, order) => sum + (order.rejectionRate ?? 0) + (order.ignoredRate ?? 0), 0) /
-        Math.max(riderOrders.length, 1)
+      ? rejectionMetricEntries.reduce((sum, entry) => sum + entry.totalRate * entry.weight, 0) /
+        rejectionMetricEntries.reduce((sum, entry) => sum + entry.weight, 0)
       : 0;
     const score = calculateDispatchScore({
       totalCompleted,

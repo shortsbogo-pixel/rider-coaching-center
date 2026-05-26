@@ -22,8 +22,8 @@ export function LoginPage() {
       const nextUser = login({ id, password });
       const fallbackPath = nextUser.role === "admin" ? "/admin" : "/rider";
       const from = (location.state as { from?: string } | null)?.from;
-      const isAllowedFrom = nextUser.role === "admin" ? Boolean(from) : Boolean(from?.startsWith("/rider"));
-      navigate(isAllowedFrom ? from || fallbackPath : fallbackPath, { replace: true });
+      const nextPath = nextUser.role === "rider" && from?.startsWith("/rider") ? from : fallbackPath;
+      navigate(nextPath, { replace: true });
     } catch (loginError) {
       setError((loginError as Error).message);
     }

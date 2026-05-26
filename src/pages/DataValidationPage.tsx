@@ -133,7 +133,7 @@ export function DataValidationPage() {
   const status = uploadStatus(activeUpload);
 
   return (
-    <div className="page-stack">
+    <div className="page-stack validation-page">
       <SectionHeader title="데이터 검수" description="업로드된 Excel 데이터를 주차별로 확인하고, 코칭 생성 전에 확인할 항목을 정리합니다." />
 
       <section className="panel validation-toolbar">
@@ -173,7 +173,7 @@ export function DataValidationPage() {
         <MetricCard label="필수 컬럼 누락" value={`${formatNumber(missingColumnCount)}개`} caption="매핑 기준" tone={missingColumnCount ? "danger" : "good"} />
       </div>
 
-      <section className="panel validation-action-panel">
+      <section className="panel validation-action-panel action-panel">
         <div className="analysis-title">
           <div>
             <h3>다음 조치</h3>
@@ -194,7 +194,7 @@ export function DataValidationPage() {
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel mapping-panel">
         <h3>필수 컬럼 매핑</h3>
         {hasUploads ? (
           <div className="mapping-grid">
@@ -216,7 +216,7 @@ export function DataValidationPage() {
         )}
       </section>
 
-      <section className="panel">
+      <section className="panel validation-summary-panel">
         <h3>검수 요약</h3>
         <div className="validation-grid">
           <div>
@@ -238,7 +238,7 @@ export function DataValidationPage() {
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel upload-file-panel">
         <h3>업로드 파일</h3>
         <div className="rider-list">
           {activeUploads.map((upload) => (

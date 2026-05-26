@@ -33,6 +33,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const isAdmin = user?.role === "admin";
   const primaryNavItems = isAdmin ? adminPrimaryNavItems : riderNavItems;
   const secondaryNavItems = isAdmin ? adminSecondaryNavItems : [];
+  const allNavItems = [...primaryNavItems, ...secondaryNavItems];
+  const currentNavItem = allNavItems.find((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`));
   const isSecondaryActive = secondaryNavItems.some((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`));
 
   useEffect(() => {
@@ -45,11 +47,18 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isAdmin ? "admin-shell" : "rider-shell"}`}>
       <header className="topbar">
-        <div>
-          <p className="eyebrow">Coupang Eats Plus</p>
-          <h1>라이더 코칭센터</h1>
+        <div className="topbar-brand">
+          <span className="brand-mark" aria-hidden="true">R</span>
+          <div>
+            <p className="eyebrow">Coupang Eats Plus</p>
+            <h1>라이더 코칭센터</h1>
+          </div>
+        </div>
+        <div className="topbar-context">
+          <span>{isAdmin ? "관리자 워크스페이스" : "라이더 코칭"}</span>
+          <strong>{currentNavItem?.label ?? "대시보드"}</strong>
         </div>
         <div className="topbar-actions">
           <span className="status-pill">{user ? `${user.displayName} · ${user.role}` : "로그인 필요"}</span>
@@ -64,7 +73,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
       <div className={`bottom-nav-shell ${isAdmin ? "has-more" : "single"}`}>
         {secondaryNavItems.length ? (
-          <div className={`nav-more-panel ${moreOpen ? "open" : ""}`} id="secondary-menu">
+          <div className={`nav-more-panel ${moreOpen ? "open" : ""}`} id="secondary-menu" role="region" aria-label="추가 메뉴">
+            <div className="nav-more-heading">
+              <span>추가 메뉴</span>
+              <button type="button" onClick={() => setMoreOpen(false)}>
+                접기
+              </button>
+            </div>
             <div className="nav-more-grid">
               {secondaryNavItems.map((item) => {
                 const Icon = item.icon;

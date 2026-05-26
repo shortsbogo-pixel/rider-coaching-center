@@ -15,3 +15,7 @@ build/
 *.xls
 *.csv
 uploads/
+
+# Local AI coaching runtime outputs
+ai-coaching-test-result.json
+backend/src/data/aiCoachingHistory.json

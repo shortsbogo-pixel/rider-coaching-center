@@ -1,7 +1,7 @@
-import { AlertCircle, CheckCircle2, FileUp, ShieldAlert } from "lucide-react";
+import { FileUp, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import { RequiredColumnHealth } from "../components/common/RequiredColumnHealth";
 import { SectionHeader } from "../components/common/SectionHeader";
-import { requiredOrderColumns } from "../utils/excelParser";
 import type { OrderRecord } from "../types/order";
 
 interface UploadedWeek {
@@ -116,39 +116,50 @@ export function ExcelUploadPage() {
   const sortedUploadedWeeks = [...uploadedWeeks].sort((a, b) => getWeekSortValue(b.week) - getWeekSortValue(a.week));
 
   return (
-    <div className="page-stack">
+    <div className="page-stack upload-page">
       <SectionHeader title="Excel 업로드" description="오더별 상세내역서 시트를 파싱해 주차별 JSON 데이터로 저장합니다." />
 
-      <section className="panel upload-panel">
-        <label className="field">
-          <span>주차 선택/입력</span>
-          <input
-            list="week-options"
-            value={selectedWeek}
-            onChange={(event) => setSelectedWeek(event.target.value)}
-            placeholder="예: 5월3주차"
-          />
-          <datalist id="week-options">
-            {weekOptions.map((week) => (
-              <option key={week} value={week} />
-            ))}
-          </datalist>
-        </label>
+      <section className="panel upload-panel upload-workbench">
+        <div className="analysis-title">
+          <div>
+            <p className="eyebrow">주차 누적 업로드</p>
+            <h3>{selectedWeek || "주차 선택 필요"}</h3>
+            <p>새 Excel은 기존 주차를 유지한 채 선택한 주차로 추가됩니다.</p>
+          </div>
+          <span className={`status-pill ${file ? "good" : "warning"}`}>{file ? "파일 선택됨" : "파일 대기"}</span>
+        </div>
 
-        <label className="dropzone">
-          <FileUp size={28} aria-hidden="true" />
-          <strong>{file?.name || "엑셀 파일 선택"}</strong>
-          <span>오더별 상세내역서 시트를 우선 분석합니다.</span>
-          <input
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null);
-              setPreview(null);
-              setMessage("");
-            }}
-          />
-        </label>
+        <div className="upload-form-grid">
+          <label className="field">
+            <span>주차 선택/입력</span>
+            <input
+              list="week-options"
+              value={selectedWeek}
+              onChange={(event) => setSelectedWeek(event.target.value)}
+              placeholder="예: 5월3주차"
+            />
+            <datalist id="week-options">
+              {weekOptions.map((week) => (
+                <option key={week} value={week} />
+              ))}
+            </datalist>
+          </label>
+
+          <label className="dropzone">
+            <FileUp size={28} aria-hidden="true" />
+            <strong>{file?.name || "엑셀 파일 선택"}</strong>
+            <span>오더별 상세내역서 시트를 우선 분석합니다.</span>
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={(event) => {
+                setFile(event.target.files?.[0] ?? null);
+                setPreview(null);
+                setMessage("");
+              }}
+            />
+          </label>
+        </div>
 
         <div className="button-row">
           <button className="secondary-button" type="button" disabled={isLoading} onClick={() => void submitUpload("preview")}>
@@ -162,23 +173,20 @@ export function ExcelUploadPage() {
         {message ? <p className="form-message">{message}</p> : null}
       </section>
 
-      <section className="panel">
-        <h3>필수 컬럼 검증</h3>
-        <div className="check-list">
-          {requiredOrderColumns.map((column) => {
-            const missing = preview?.missingColumns.includes(column);
-            return (
-              <div key={column} className={`check-row ${missing ? "error" : ""}`}>
-                {missing ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
-                <span>{column}</span>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      <RequiredColumnHealth
+        weekKey={preview ? selectedWeek : undefined}
+        missingColumns={preview?.missingColumns}
+        refreshKey={uploadedWeeks.length}
+        title="필수 컬럼 검증"
+        description={
+          preview
+            ? "선택한 Excel 미리보기 기준으로 필수 컬럼 누락 여부를 확인합니다."
+            : "저장된 최신 업로드 주차 기준으로 필수 컬럼 상태를 확인합니다."
+        }
+      />
 
       {preview ? (
-        <section className="panel">
+        <section className="panel preview-panel">
           <h3>파싱 결과 미리보기</h3>
           <p className="preview-meta">
             시트: {preview.sheetName || "없음"} · 상태: {preview.status === "ready" ? "저장 가능" : "확인 필요"}
@@ -207,7 +215,7 @@ export function ExcelUploadPage() {
         </section>
       ) : null}
 
-      <section className="panel">
+      <section className="panel uploaded-weeks-panel">
         <h3>업로드된 주차</h3>
         <div className="week-grid">
           {sortedUploadedWeeks.map((item) => {
