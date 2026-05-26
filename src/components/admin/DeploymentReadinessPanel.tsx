@@ -79,6 +79,11 @@ function buildBetaReadinessItems(report: DeploymentHealthReport | null, errorMes
   const backupStatus: DeploymentHealthStatus = report ? (report.dataDirectory.writable && report.gitIgnore.backendDataIgnored ? "ok" : "warning") : "warning";
 
   return [
+    { id: "beta-deployment-method", label: "배포 방식 미선택 / 선택 필요", status: "warning", message: "외부 공유 전 로컬 터널, Manus, Render/Fly/Railway/VPS 중 하나를 선택하세요." },
+    { id: "beta-url", label: "베타 테스트 URL 준비 여부", status: "warning", message: "외부 테스터에게 전달할 관리자/라이더 URL을 아직 수동 확인해야 합니다." },
+    { id: "beta-accounts", label: "테스트 계정 준비 여부", status: "warning", message: "관리자와 라이더 테스트 역할, 테스트 대상 라이더명을 문서 기준으로 정리하세요." },
+    { id: "beta-backup-done", label: "백업 완료 여부", status: "warning", message: "베타 시작 전 운영 데이터 백업 파일을 직접 다운로드해야 합니다." },
+    { id: "beta-data-cleanup", label: "샘플 데이터 정리 여부", status: "warning", message: "샘플/운영 데이터가 섞이지 않도록 BETA_RUNBOOK의 수동 초기화 절차를 확인하세요." },
     { id: "beta-frontend", label: "프론트 실행 상태", status: "ok", message: "관리자 화면이 렌더링되어 베타 점검 패널을 표시합니다." },
     { id: "beta-backend", label: "백엔드 실행 상태", status: backendStatus, message: report?.server.message ?? (errorMessage || "Health check 응답을 기다리는 중입니다.") },
     { id: "beta-ai", label: "AI 상태 정상 여부", status: aiStatus, message: report ? `${report.ollama.model} / fallback ${report.ollama.fallbackUsed ? "사용" : "미사용"}` : "AI 상태 점검 전입니다." },

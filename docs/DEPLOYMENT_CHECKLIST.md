@@ -61,6 +61,7 @@ Without the admin header, `/api/health/full` should return 403.
 Open `http://localhost:5174/admin` and confirm:
 
 - Before beta testing, open `docs/BETA_TEST_CHECKLIST.md` and run through the scenario in `docs/BETA_TEST_SCENARIOS.md`.
+- Choose a beta deployment option from `docs/BETA_DEPLOYMENT_OPTIONS.md` before sharing an external URL.
 - The first screen shows today's priority summary, weekly changes, rider risk summary, AI status, and operation readiness before lower-priority maintenance panels.
 - "AI 운영본부 브리핑" can generate a weekly executive summary from code-calculated stats and shows three priority action cards.
 - AI status check is normal and fallback is not used.
@@ -68,7 +69,8 @@ Open `http://localhost:5174/admin` and confirm:
 - Operation logs load in latest-first order.
 - Message queue and send history still work.
 - The operation readiness panel shows normal/warning/fail badges.
-- The "베타 테스트 준비 상태" block shows frontend, backend, AI, storage, logs, message queue, backup, rider exposure, PWA manifest, and sample data checks.
+- The "베타 테스트 준비 상태" block shows deployment method, beta URL, test accounts, backup, sample data cleanup, AI, logs, rider exposure, PWA manifest, and sample data checks.
+- Actual SMS sending API is not connected yet. Message sending remains manual copy/status management.
 
 Admin operation flow:
 
@@ -89,6 +91,15 @@ Recommended beta run order:
 6. Generate AI operation headquarters briefing and copy the executive report text.
 7. Open `/rider` and confirm admin-only information is hidden.
 8. Download an operation backup before ending the beta session.
+
+External URL sharing checklist:
+
+1. Confirm the selected deployment method and URL.
+2. Confirm admin and rider URLs separately.
+3. Confirm `/rider` does not show admin-only information.
+4. Confirm operation data backup has been downloaded.
+5. Confirm test account/role guide in `docs/BETA_TEST_ACCOUNTS.md`.
+6. Confirm local Gemma 4 PC power, sleep mode, memory, and network stability when using a local tunnel.
 
 ## 6. Rider Screen Exposure Check
 
@@ -117,6 +128,9 @@ PWA home screen check:
 - `docs/BETA_TEST_SCENARIOS.md`: admin/rider scenario walkthrough
 - `docs/BUG_REPORT_TEMPLATE.md`: bug report format for testers
 - `docs/RELEASE_NOTES_BETA.md`: Beta MVP release notes and known limits
+- `docs/BETA_DEPLOYMENT_OPTIONS.md`: beta deployment method comparison
+- `docs/BETA_RUNBOOK.md`: beta execution, backup, and data cleanup guide
+- `docs/BETA_TEST_ACCOUNTS.md`: admin/rider role and exposure guide
 
 ## 8. Operation Data Backup
 
@@ -135,6 +149,8 @@ Before any real operation test, download a backup first. `backend/data/*.json` i
 
 Do not commit `backend/data/*.json`, `backend/src/data/*.json`, uploads, Excel files, CSV files, or `.env`.
 
+Before real operation, review DB transition options. JSON files are acceptable for beta validation, but Supabase/PostgreSQL or another managed database should be considered before long-running production use.
+
 ## 9. Port Confusion Guide
 
 - `4100`: current backend default
@@ -152,6 +168,8 @@ For this phase, use `4100` and `5174` unless explicitly testing an older server.
 2. Confirm `OLLAMA_NUM_CTX=1024` and `OLLAMA_NUM_PREDICT=300`.
 3. Restart Ollama.
 4. Use the built-in template fallback for the beta test and record the issue in `docs/BUG_REPORT_TEMPLATE.md`.
+
+When using local Gemma 4 through a tunnel or external beta URL, the PC running Ollama must stay awake and have enough memory. If the PC sleeps, AI generation and status checks will fail, but template fallback should keep the app usable.
 
 ## 11. Problem Triage Order
 

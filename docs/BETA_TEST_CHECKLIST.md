@@ -122,6 +122,9 @@ Set-Content -Path "backend\data\message-send-history.json" -Value "[]" -Encoding
 Set-Content -Path "backend\data\operation-logs.json" -Value "[]" -Encoding UTF8
 Set-Content -Path "backend\data\operation-briefings.json" -Value "[]" -Encoding UTF8
 Set-Content -Path "backend\data\ai-coaching-history.json" -Value "[]" -Encoding UTF8
+Set-Content -Path "backend\data\manager-action-checklists.json" -Value "[]" -Encoding UTF8
+Set-Content -Path "backend\data\weekly-briefings.json" -Value "[]" -Encoding UTF8
+Set-Content -Path "backend\data\monthly-reports.json" -Value "[]" -Encoding UTF8
 ```
 
 운영 데이터가 들어간 후에는 초기화 전 반드시 백업 파일을 다운로드한다.
