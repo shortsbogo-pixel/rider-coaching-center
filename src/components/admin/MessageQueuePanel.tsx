@@ -50,6 +50,14 @@ function sentMessageFor(item: MessageQueueItem) {
   return item.riderMessage;
 }
 
+function statusTone(status: MessageSendStatus) {
+  if (status === "발송완료") return "good";
+  if (status === "보류") return "warning";
+  if (status === "실패") return "danger";
+  if (status === "복사완료") return "info";
+  return "default";
+}
+
 export function MessageQueuePanel({
   items,
   onCopy,
@@ -177,7 +185,7 @@ export function MessageQueuePanel({
                     {item.weekKey || "주차 미지정"} · {item.riskLevel} · {item.trendLabel ?? "추세 없음"}
                   </span>
                 </div>
-                <b className={`message-send-status status-${item.sendStatus}`}>{item.sendStatus}</b>
+                <b className={`message-send-status ${statusTone(item.sendStatus)}`}>{item.sendStatus}</b>
               </div>
 
               <div className="message-queue-meta">
@@ -240,7 +248,7 @@ export function MessageQueuePanel({
             </article>
           ))
         ) : (
-          <p className="operation-empty-message">발송 대기 항목이 없습니다.</p>
+          <p className="operation-empty-message">AI 코칭을 생성한 뒤 “발송 대기함에 추가”를 누르면 카톡/문자 발송 항목이 이곳에 표시됩니다.</p>
         )}
       </div>
     </section>

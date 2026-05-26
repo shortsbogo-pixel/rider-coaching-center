@@ -60,11 +60,20 @@ Without the admin header, `/api/health/full` should return 403.
 
 Open `http://localhost:5174/admin` and confirm:
 
+- The first screen shows today's priority summary, weekly changes, rider risk summary, AI status, and operation readiness before lower-priority maintenance panels.
 - AI status check is normal and fallback is not used.
 - Operation API storage badge can show server saved status.
 - Operation logs load in latest-first order.
 - Message queue and send history still work.
 - The operation readiness panel shows normal/warning/fail badges.
+
+Admin operation flow:
+
+1. Review "오늘 먼저 볼 것" and "이번 주 핵심 변화".
+2. Open "라이더 위험도 요약" and generate AI coaching for high-risk riders.
+3. Add rider messages to "발송 대기함".
+4. Copy Kakao/SMS text manually and mark sent or hold.
+5. Review operation logs, backup, and monthly report after daily work.
 
 ## 6. Rider Screen Exposure Check
 
@@ -73,6 +82,19 @@ Open `http://localhost:5174/rider` with a rider login and confirm:
 - Only the rider's own weekly summary and coaching message are visible.
 - Admin memo, operation logs, message queue, send history, analysis reasons, backup/restore, and internal status panels are not visible.
 - A rider cannot fetch another rider's `/api/riders/:id` or `/api/coaching/:id`.
+
+Mobile check:
+
+- In browser dev tools or on a phone, test around 390px width.
+- Confirm `/admin` cards stack vertically, buttons are easy to tap, long messages wrap, and the quick navigation does not cover content.
+- Confirm `/rider` remains focused on the rider's own summary, coaching message, and mission guidance.
+
+PWA home screen check:
+
+1. Open `http://localhost:5174/admin` on a mobile browser.
+2. Confirm `/manifest.webmanifest` loads.
+3. Use the browser menu to choose "Add to Home Screen" or the equivalent install action.
+4. Launch the installed shortcut and confirm it opens in standalone app style.
 
 ## 7. Operation Data Backup
 
@@ -106,3 +128,4 @@ For this phase, use `4100` and `5174` unless explicitly testing an older server.
 5. Confirm `VITE_API_BASE_URL`.
 6. Confirm `backend/data` JSON files are valid arrays.
 7. Download an operation backup before attempting restore.
+8. If PWA install is missing, confirm `index.html` links `/manifest.webmanifest` and icon files under `/public/icons/`.

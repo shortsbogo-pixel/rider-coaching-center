@@ -88,7 +88,7 @@ export function MonthlyOperationReportPanel({
               </span>
             ))
           ) : (
-            <p>이번 달 저장된 코칭 이력이 없습니다.</p>
+            <p>AI 코칭을 생성하면 이번 달 코칭 빈도 TOP 5가 표시됩니다.</p>
           )}
         </div>
 
@@ -101,7 +101,7 @@ export function MonthlyOperationReportPanel({
               </span>
             ))
           ) : (
-            <p>현재 선택 주차에 하락 라이더가 없습니다.</p>
+            <p>하락폭이 큰 라이더가 생기면 관리 우선순위가 표시됩니다.</p>
           )}
         </div>
       </div>
@@ -123,7 +123,7 @@ export function MonthlyOperationReportPanel({
             <small>{formatDateTime(report.createdAt)}</small>
           </>
         ) : (
-          <p>아직 생성된 월간 운영 리포트가 없습니다.</p>
+          <p>월간 운영 리포트를 생성하면 운영 요약과 다음 달 관리 제안이 표시됩니다.</p>
         )}
       </div>
 
@@ -158,7 +158,7 @@ export function MonthlyOperationReportPanel({
               </details>
             ))
           ) : (
-            <p>저장된 이전 월간 리포트가 없습니다.</p>
+            <p>같은 달에 리포트를 다시 생성하면 이전 리포트가 이곳에 누적됩니다.</p>
           )}
         </div>
       </details>

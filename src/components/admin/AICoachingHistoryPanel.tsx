@@ -59,7 +59,7 @@ export function AICoachingHistoryPanel({ history, latestCreatedAt }: AICoachingH
               </details>
             ))
           ) : (
-            <p className="ai-history-empty">저장된 이전 코칭이 없습니다.</p>
+            <p className="ai-history-empty">AI 코칭을 생성하면 같은 라이더의 이전 코칭 메시지를 여기서 다시 확인할 수 있습니다.</p>
           )}
         </div>
       ) : null}

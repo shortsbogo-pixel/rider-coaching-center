@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Rider Coach">
+  <rect width="512" height="512" rx="112" fill="#17324d"/>
+  <circle cx="256" cy="256" r="156" fill="#ffffff" opacity="0.1"/>
+  <path d="M136 298c35-91 84-137 147-137 53 0 94 28 121 81" fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round"/>
+  <path d="M146 331h220" fill="none" stroke="#1f8a70" stroke-width="40" stroke-linecap="round"/>
+  <circle cx="190" cy="348" r="38" fill="#ffffff"/>
+  <circle cx="352" cy="348" r="38" fill="#ffffff"/>
+  <path d="M240 201h67l-38 70h72" fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

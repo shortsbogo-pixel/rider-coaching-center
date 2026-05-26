@@ -88,7 +88,7 @@ export function WeeklyAIBriefingPanel({
         </span>
       </div>
 
-      {!hasData ? <p className="weekly-ai-empty">브리핑을 생성할 데이터가 없습니다.</p> : null}
+      {!hasData ? <p className="weekly-ai-empty">업로드된 주차 데이터를 선택하면 주간 AI 브리핑을 생성할 수 있습니다.</p> : null}
       {errorMessage ? <p className="weekly-ai-error">{errorMessage}</p> : null}
 
       {latestBriefing ? (
@@ -134,7 +134,7 @@ export function WeeklyAIBriefingPanel({
           </div>
         </article>
       ) : (
-        <p className="weekly-ai-empty">아직 생성된 주간 브리핑이 없습니다.</p>
+        <p className="weekly-ai-empty">주간 AI 브리핑을 생성하면 핵심 요약과 관리자 우선 액션이 이곳에 표시됩니다.</p>
       )}
 
       <details className="weekly-ai-history">
@@ -160,7 +160,7 @@ export function WeeklyAIBriefingPanel({
               </details>
             ))
           ) : (
-            <p>저장된 이전 브리핑이 없습니다.</p>
+            <p>브리핑을 여러 번 생성하면 이전 브리핑이 이곳에 누적됩니다.</p>
           )}
         </div>
       </details>

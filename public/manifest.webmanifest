@@ -1,0 +1,24 @@
+{
+  "name": "라이더 코칭센터",
+  "short_name": "Rider Coach",
+  "description": "CORE PARTNERS 라이더 코칭센터 운영 대시보드",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#17324d",
+  "background_color": "#f5f7fb",
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -129,7 +129,7 @@ export function OperationLogsPanel({ refreshKey = 0, onLoaded }: { refreshKey?: 
             </article>
           ))
         ) : (
-          <p className="operation-empty-message">아직 운영 로그가 없습니다.</p>
+          <p className="operation-empty-message">AI 코칭 생성, 발송 처리, 백업 다운로드 같은 관리자 작업이 발생하면 최신순으로 표시됩니다.</p>
         )}
       </div>
     </section>

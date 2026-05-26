@@ -136,12 +136,12 @@ interface AICopyStatusState {
 type AdminTopicId = "briefing" | "operation" | "analysis" | "riders";
 type AdminTopicState = Record<AdminTopicId, boolean>;
 
-const adminTopicIds: AdminTopicId[] = ["briefing", "operation", "analysis", "riders"];
+const adminTopicIds: AdminTopicId[] = ["briefing", "riders", "operation", "analysis"];
 const adminTopicLabels: Record<AdminTopicId, { label: string; shortLabel: string; caption: string }> = {
-  briefing: { label: "기준 주차·주간 브리핑", shortLabel: "브리핑", caption: "15장 카드" },
-  operation: { label: "운영지표·전주 대비 변화", shortLabel: "운영", caption: "핵심 KPI" },
-  analysis: { label: "누적·등급·구간 분석", shortLabel: "분석", caption: "보조 지표" },
-  riders: { label: "라이더 위험도 요약", shortLabel: "라이더", caption: "급변화 라이더" }
+  briefing: { label: "이번 주 핵심 변화", shortLabel: "이번 주", caption: "브리핑·주간 변화" },
+  operation: { label: "발송 대기함", shortLabel: "발송", caption: "카톡·문자 관리" },
+  analysis: { label: "누적 데이터 분석", shortLabel: "분석", caption: "등급·구간 보조 지표" },
+  riders: { label: "라이더 위험도 요약", shortLabel: "라이더", caption: "고위험·관리주의" }
 };
 
 const riderSortOptions: Array<{ value: AdminRiderSortOption; label: string }> = [
@@ -921,6 +921,10 @@ export function AdminDashboard() {
       localWeeklyBriefingHistory.length > 0 ||
       localMonthlyReportHistory.length > 0
   });
+  const highRiskRiderCount = currentMetrics.filter((metric) => metric.riskLevel === "고위험").length;
+  const cautionRiderCount = currentMetrics.filter((metric) => metric.riskLevel === "관리주의").length;
+  const unsentQueueCount = messageQueueItems.filter((item) => item.sendStatus !== "발송완료").length;
+  const highRiskUnsentQueueCount = messageQueueItems.filter((item) => item.riskLevel === "고위험" && item.sendStatus !== "발송완료").length;
 
   const [aiLoadingById, setAiLoadingById] = useState<Record<string, boolean>>({});
   const [aiResultById, setAiResultById] = useState<Record<string, AICoachingResultState>>({});
@@ -1886,12 +1890,12 @@ export function AdminDashboard() {
   return (
     <div className={`page-stack admin-dashboard-page ${isCompactAdminLayout ? "compact" : "wide"}`}>
       <div className="admin-debug-banner">
-        <span className="status-pill good">AI 코칭 UI 연결됨</span>
-        <span className="status-pill">관리자 라우트: /admin</span>
+        <span className="status-pill good">AI 코칭 연결 완료</span>
+        <span className="status-pill">관리자 워크스페이스 /admin</span>
       </div>
       <SectionHeader
         title="관리자 대시보드"
-        description="선택 주차 기준으로 운영 지표와 전주 대비 변화를 확인합니다."
+        description="이번 주 변화, 고위험 라이더, 발송 대기함, 운영 점검을 실제 처리 순서대로 확인합니다."
       />
 
       <nav className="admin-quick-nav" aria-label="관리자 대시보드 빠른 이동">
@@ -1931,7 +1935,39 @@ export function AdminDashboard() {
             ))}
           </select>
         </label>
-        <p>브리핑의 라이더 카드와 위험도 요약 리스트에만 적용됩니다.</p>
+        <p>주간 브리핑과 라이더 위험도 요약에 같은 정렬 기준을 적용합니다.</p>
+      </section>
+
+      <section className="panel admin-command-center" aria-label="운영 핵심 요약">
+        <div className="operation-panel-title">
+          <div>
+            <h3>오늘 먼저 볼 것</h3>
+            <p>이번 주 운영 변화와 바로 처리할 라이더·발송 항목을 요약합니다.</p>
+          </div>
+          <span className="status-pill">기준 주차 {selectedWeekKey || "미선택"}</span>
+        </div>
+        <div className="admin-command-grid">
+          <article className="admin-command-card">
+            <span>이번 주 핵심 변화</span>
+            <strong>{completedChange.detail}</strong>
+            <p>{completedChange.line}</p>
+          </article>
+          <article className={highRiskRiderCount ? "admin-command-card danger" : "admin-command-card good"}>
+            <span>고위험 라이더</span>
+            <strong>{formatNumber(highRiskRiderCount)}명</strong>
+            <p>관리주의 {formatNumber(cautionRiderCount)}명</p>
+          </article>
+          <article className={highRiskUnsentQueueCount ? "admin-command-card warning" : "admin-command-card"}>
+            <span>발송 대기</span>
+            <strong>{formatNumber(unsentQueueCount)}건</strong>
+            <p>고위험 미발송 {formatNumber(highRiskUnsentQueueCount)}건</p>
+          </article>
+          <article className="admin-command-card">
+            <span>운영 준비</span>
+            <strong>{operationSaveStatus === "server" ? "정상" : operationSaveStatus === "local" ? "확인 필요" : "저장 실패"}</strong>
+            <p>{operationSaveDetail}</p>
+          </article>
+        </div>
       </section>
 
       <OperationStorageStatus status={operationSaveStatus} detail={operationSaveDetail} />
@@ -1943,20 +1979,6 @@ export function AdminDashboard() {
       />
       <DeploymentReadinessPanel />
       <OperationDataCheckPanel items={operationDataCheckItems} />
-      <OperationBackupPanel
-        aiCoachingHistory={localAICoachingHistory}
-        managerActions={managerActionRecords}
-        monthlyReports={localMonthlyReportHistory}
-        messageQueue={messageQueueItems}
-        messageSendHistory={messageSendHistory}
-        operationLogs={operationLogs}
-        onRestored={refreshOperationDataAfterRestore}
-        onAudit={(actionType, summary) => {
-          void audit(actionType, summary);
-        }}
-      />
-      <OperationMigrationPanel onMigrate={migrateLocalOperationData} />
-      <OperationLogsPanel refreshKey={operationLogRevision} onLoaded={handleOperationLogsLoaded} />
 
       <div className="dashboard-topic-list">
         <details className="dashboard-topic" id="admin-topic-briefing" open={openAdminTopics.briefing}>
@@ -1992,21 +2014,6 @@ export function AdminDashboard() {
               errorMessage={weeklyBriefingError}
               onGenerate={handleGenerateWeeklyAIBriefing}
               onCopy={handleCopyWeeklyBriefing}
-            />
-
-            <MonthlyOperationReportPanel
-              summary={monthlyOperationReportSummary}
-              report={monthlyOperationReport}
-              history={monthlyReportHistory}
-              loading={monthlyReportLoading}
-              copyStatus={monthlyReportCopyStatus}
-              copyFailed={monthlyReportCopyFailed}
-              manualCopyText={monthlyReportManualText}
-              errorMessage={monthlyReportError}
-              operationMemo={operationMemo}
-              onMemoChange={setOperationMemo}
-              onGenerate={handleGenerateMonthlyOperationReport}
-              onCopy={handleCopyMonthlyOperationReport}
             />
 
       <section className="panel weekly-briefing-panel">
@@ -2608,6 +2615,37 @@ export function AdminDashboard() {
           </div>
         </details>
       </div>
+
+      <section className="admin-operations-stack" aria-label="운영 마감 도구">
+        <MonthlyOperationReportPanel
+          summary={monthlyOperationReportSummary}
+          report={monthlyOperationReport}
+          history={monthlyReportHistory}
+          loading={monthlyReportLoading}
+          copyStatus={monthlyReportCopyStatus}
+          copyFailed={monthlyReportCopyFailed}
+          manualCopyText={monthlyReportManualText}
+          errorMessage={monthlyReportError}
+          operationMemo={operationMemo}
+          onMemoChange={setOperationMemo}
+          onGenerate={handleGenerateMonthlyOperationReport}
+          onCopy={handleCopyMonthlyOperationReport}
+        />
+        <OperationLogsPanel refreshKey={operationLogRevision} onLoaded={handleOperationLogsLoaded} />
+        <OperationBackupPanel
+          aiCoachingHistory={localAICoachingHistory}
+          managerActions={managerActionRecords}
+          monthlyReports={localMonthlyReportHistory}
+          messageQueue={messageQueueItems}
+          messageSendHistory={messageSendHistory}
+          operationLogs={operationLogs}
+          onRestored={refreshOperationDataAfterRestore}
+          onAudit={(actionType, summary) => {
+            void audit(actionType, summary);
+          }}
+        />
+        <OperationMigrationPanel onMigrate={migrateLocalOperationData} />
+      </section>
     </div>
   );
 }

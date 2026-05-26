@@ -244,6 +244,63 @@ input {
   width: 100%;
 }
 
+.admin-command-center,
+.admin-operations-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-command-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: 10px;
+}
+
+.admin-command-card {
+  display: grid;
+  gap: 7px;
+  min-height: 112px;
+  padding: 14px;
+  border: 1px solid #dfe6f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.admin-command-card.good {
+  border-color: #b7e8d5;
+  background: #f2fcf8;
+}
+
+.admin-command-card.warning {
+  border-color: #f4d184;
+  background: #fff9eb;
+}
+
+.admin-command-card.danger {
+  border-color: #f2c6bf;
+  background: #fff7f5;
+}
+
+.admin-command-card span {
+  color: #65758a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-command-card strong {
+  color: #17324d;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.admin-command-card p {
+  margin: 0;
+  color: #405166;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
 .admin-quick-nav {
   position: sticky;
   top: var(--admin-quick-top);
@@ -742,6 +799,22 @@ input {
   gap: 10px;
 }
 
+#admin-topic-briefing {
+  order: 1;
+}
+
+#admin-topic-riders {
+  order: 2;
+}
+
+#admin-topic-operation {
+  order: 3;
+}
+
+#admin-topic-analysis {
+  order: 4;
+}
+
 .dashboard-topic {
   display: grid;
   scroll-margin-top: calc(var(--admin-topic-top) + 10px);
@@ -847,8 +920,8 @@ input {
   margin-top: 8px;
 }
 .ai-coaching-button {
-  min-height: 36px;
-  padding: 8px 12px;
+  min-height: 42px;
+  padding: 9px 14px;
   border-radius: 8px;
   border: 1px solid #d9e3ef;
   background: #17324d;
@@ -857,8 +930,8 @@ input {
   cursor: pointer;
 }
 .ai-coaching-button.small {
-  min-height: 30px;
-  padding: 6px 8px;
+  min-height: 38px;
+  padding: 8px 10px;
   font-size: 13px;
 }
 .ai-coaching-button:disabled {
@@ -1275,14 +1348,20 @@ input {
 }
 
 .copy-button {
-  min-height: 32px;
-  padding: 6px 8px;
+  min-height: 40px;
+  padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid #d9e3ef;
   background: #eef4fb;
   color: #17324d;
   font-weight: 900;
   cursor: pointer;
+}
+
+.copy-button:disabled,
+.secondary-link-button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 .copy-toast {
   font-size: 12px;
@@ -1821,7 +1900,28 @@ input {
   background: #eff6ff;
   color: #184e77;
   font-size: 12px;
+  font-weight: 900;
   white-space: nowrap;
+}
+
+.message-send-status.good {
+  background: #ecfdf5;
+  color: #067647;
+}
+
+.message-send-status.warning {
+  background: #fff7ed;
+  color: #b45309;
+}
+
+.message-send-status.danger {
+  background: #fef2f2;
+  color: #b42318;
+}
+
+.message-send-status.info {
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .message-queue-copy-grid {
@@ -1930,6 +2030,19 @@ input {
   color: #65758a;
   font-size: 12px;
   font-weight: 800;
+}
+
+.operation-empty-message,
+.weekly-ai-empty,
+.ai-history-empty {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed #cfd9e6;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #405166;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .operation-log-card p {
@@ -3568,7 +3681,55 @@ input {
   }
 
   .admin-dashboard-page .panel {
-    padding: 12px;
+    padding: 14px;
+  }
+
+  .admin-command-grid,
+  .message-queue-summary,
+  .message-queue-controls,
+  .message-queue-copy-grid,
+  .monthly-report-metric-grid,
+  .monthly-report-split,
+  .weekly-ai-summary-grid,
+  .operation-check-grid,
+  .operation-status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .message-queue-card,
+  .operation-log-card,
+  .rider-risk-card {
+    padding: 14px;
+  }
+
+  .message-queue-actions,
+  .message-queue-card-head,
+  .operation-panel-title,
+  .weekly-ai-action-row,
+  .weekly-ai-result-head,
+  .monthly-report-title {
+    display: grid;
+    align-items: stretch;
+  }
+
+  .message-queue-actions button,
+  .message-queue-copy-grid button,
+  .monthly-report-button-row button,
+  .weekly-ai-action-row button,
+  .operation-button-grid button {
+    width: 100%;
+  }
+
+  .message-queue-copy-grid p {
+    max-height: 220px;
+    font-size: 14px;
+  }
+
+  .admin-quick-nav {
+    bottom: 10px;
+    top: auto;
+    margin: 0 -6px;
+    border-radius: 12px;
   }
 
   .admin-dashboard-page .dashboard-topic-list,
