@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchFullHealthReport, getApiBaseUrl, type DeploymentHealthReport, type DeploymentHealthStatus } from "../../utils/deploymentReadinessApi";
+import { buildApiUrl, fetchFullHealthReport, getApiBaseUrl, type DeploymentHealthReport, type DeploymentHealthStatus } from "../../utils/deploymentReadinessApi";
 
 type ReadinessTone = "good" | "warning" | "danger";
 
@@ -7,6 +7,11 @@ interface ReadinessItem {
   id: string;
   label: string;
   status: DeploymentHealthStatus;
+  message: string;
+}
+
+interface UploadSummary {
+  count: number;
   message: string;
 }
 
@@ -65,10 +70,33 @@ function buildReadinessItems(report: DeploymentHealthReport | null, errorMessage
   ];
 }
 
+function buildBetaReadinessItems(report: DeploymentHealthReport | null, errorMessage: string, uploadSummary: UploadSummary): ReadinessItem[] {
+  const manifestLink = typeof document !== "undefined" ? document.querySelector('link[rel="manifest"]')?.getAttribute("href") : "";
+  const backendStatus: DeploymentHealthStatus = report ? report.server.status : errorMessage ? "fail" : "warning";
+  const aiStatus: DeploymentHealthStatus = report ? (report.ollama.connected && report.ollama.gemmaResponding && !report.ollama.fallbackUsed ? "ok" : "warning") : "warning";
+  const operationLogStatus = report ? fileStatus(report, "operation-logs.json") : "warning";
+  const messageQueueStatus = report ? fileStatus(report, "message-queue.json") : "warning";
+  const backupStatus: DeploymentHealthStatus = report ? (report.dataDirectory.writable && report.gitIgnore.backendDataIgnored ? "ok" : "warning") : "warning";
+
+  return [
+    { id: "beta-frontend", label: "프론트 실행 상태", status: "ok", message: "관리자 화면이 렌더링되어 베타 점검 패널을 표시합니다." },
+    { id: "beta-backend", label: "백엔드 실행 상태", status: backendStatus, message: report?.server.message ?? (errorMessage || "Health check 응답을 기다리는 중입니다.") },
+    { id: "beta-ai", label: "AI 상태 정상 여부", status: aiStatus, message: report ? `${report.ollama.model} / fallback ${report.ollama.fallbackUsed ? "사용" : "미사용"}` : "AI 상태 점검 전입니다." },
+    { id: "beta-storage", label: "서버 저장 가능 여부", status: report?.dataDirectory.status ?? "warning", message: report?.dataDirectory.message ?? "backend/data 접근 상태를 확인 중입니다." },
+    { id: "beta-logs", label: "운영 로그 기록 가능 여부", status: operationLogStatus, message: report ? fileMessage(report, "operation-logs.json") : "운영 로그 파일 상태 확인 전입니다." },
+    { id: "beta-queue", label: "발송 대기함 저장 가능 여부", status: messageQueueStatus, message: report ? fileMessage(report, "message-queue.json") : "발송 대기함 파일 상태 확인 전입니다." },
+    { id: "beta-backup", label: "백업 가능 여부", status: backupStatus, message: report ? "백업 전 실제 다운로드를 한 번 수행하세요." : "서버 저장소 확인 후 백업을 점검하세요." },
+    { id: "beta-rider-scope", label: "라이더 화면 관리자 정보 미노출 여부", status: "ok", message: "/rider는 관리자 운영 패널을 렌더링하지 않습니다." },
+    { id: "beta-pwa", label: "PWA manifest 확인 여부", status: manifestLink ? "ok" : "warning", message: manifestLink ? `${manifestLink} 연결됨` : "index.html의 manifest link를 확인하세요." },
+    { id: "beta-sample-data", label: "샘플 데이터 존재 여부", status: uploadSummary.count > 0 ? "ok" : "warning", message: uploadSummary.message }
+  ];
+}
+
 export function DeploymentReadinessPanel() {
   const [report, setReport] = useState<DeploymentHealthReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [uploadSummary, setUploadSummary] = useState<UploadSummary>({ count: 0, message: "업로드 주차 데이터를 확인 중입니다." });
 
   async function loadReport() {
     setLoading(true);
@@ -85,9 +113,20 @@ export function DeploymentReadinessPanel() {
 
   useEffect(() => {
     void loadReport();
+    fetch(buildApiUrl("/uploads"))
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        const weeks = Array.isArray(payload?.weeks) ? payload.weeks : [];
+        setUploadSummary({
+          count: weeks.length,
+          message: weeks.length ? `업로드/샘플 주차 ${weeks.length}개 확인` : "업로드된 주차 데이터가 없습니다. 베타 전 샘플 업로드를 확인하세요."
+        });
+      })
+      .catch(() => setUploadSummary({ count: 0, message: "업로드 주차 데이터를 확인하지 못했습니다." }));
   }, []);
 
   const items = useMemo(() => buildReadinessItems(report, errorMessage), [report, errorMessage]);
+  const betaItems = useMemo(() => buildBetaReadinessItems(report, errorMessage, uploadSummary), [report, errorMessage, uploadSummary]);
 
   return (
     <section className="panel deployment-readiness-panel">
@@ -113,6 +152,26 @@ export function DeploymentReadinessPanel() {
             <p>{item.message}</p>
           </article>
         ))}
+      </div>
+
+      <div className="beta-readiness-block">
+        <div className="operation-panel-title compact">
+          <div>
+            <h4>베타 테스트 준비 상태</h4>
+            <p>베타 전 실제 사용 흐름에서 반드시 확인할 항목입니다.</p>
+          </div>
+        </div>
+        <div className="operation-check-grid deployment-readiness-grid beta-readiness-grid">
+          {betaItems.map((item) => (
+            <article className={`operation-check-card ${toTone(item.status)}`} key={item.id}>
+              <div>
+                <span>{item.label}</span>
+                <em className={`status-pill ${toTone(item.status)}`}>{statusLabel(item.status)}</em>
+              </div>
+              <p>{item.message}</p>
+            </article>
+          ))}
+        </div>
       </div>
     </section>
   );

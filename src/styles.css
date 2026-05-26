@@ -2328,6 +2328,19 @@ input {
   gap: 14px;
 }
 
+.beta-readiness-block {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #dfe6f0;
+  padding-top: 12px;
+}
+
+.operation-panel-title.compact h4 {
+  margin: 0 0 4px;
+  color: #17324d;
+  font-size: 16px;
+}
+
 .deployment-readiness-grid .operation-check-card {
   min-height: 118px;
 }
