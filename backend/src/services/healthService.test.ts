@@ -31,6 +31,10 @@ test("buildFullHealthReport checks operation files and Ollama status", async () 
         gemmaResponding: true,
         checkedAt: "2026-05-26T00:00:00.000Z",
         fallbackUsed: false,
+        provider: "ollama",
+        aiProvider: "ollama",
+        aiMode: "auto",
+        fallbackEnabled: true,
         message: "ok"
       })
     });

@@ -242,6 +242,13 @@ router.post("/generate", async (req: Request, res: Response, next) => {
       adminMessage: result.adminMessage,
       riderMessage: result.riderMessage,
       isTemplate: result.isTemplate,
+      source: result.source,
+      fallbackUsed: result.fallbackUsed,
+      fallbackReason: result.fallbackReason,
+      provider: result.provider,
+      aiMode: result.aiMode,
+      templateKey: result.templateKey,
+      templateVersion: result.templateVersion,
       generatedAt: new Date().toISOString()
     };
 
@@ -318,6 +325,13 @@ interface BatchCoachingResponseItem {
   adminMessage: string;
   riderMessage: string;
   isTemplate: boolean;
+  source?: string;
+  fallbackUsed?: boolean;
+  fallbackReason?: string;
+  provider?: string;
+  aiMode?: string;
+  templateKey?: string;
+  templateVersion?: string;
   error?: string;
 }
 
@@ -353,6 +367,13 @@ async function generateBatchCoaching(items: BatchCoachingItem[]): Promise<BatchC
           adminMessage: result.adminMessage,
           riderMessage: result.riderMessage,
           isTemplate: result.isTemplate,
+          source: result.source,
+          fallbackUsed: result.fallbackUsed,
+          fallbackReason: result.fallbackReason,
+          provider: result.provider,
+          aiMode: result.aiMode,
+          templateKey: result.templateKey,
+          templateVersion: result.templateVersion,
           generatedAt: new Date().toISOString()
         };
 
@@ -362,7 +383,14 @@ async function generateBatchCoaching(items: BatchCoachingItem[]): Promise<BatchC
           riderId: item.riderId,
           adminMessage: result.adminMessage,
           riderMessage: result.riderMessage,
-          isTemplate: result.isTemplate
+          isTemplate: result.isTemplate,
+          source: result.source,
+          fallbackUsed: result.fallbackUsed,
+          fallbackReason: result.fallbackReason,
+          provider: result.provider,
+          aiMode: result.aiMode,
+          templateKey: result.templateKey,
+          templateVersion: result.templateVersion
         };
       } catch (error) {
         results[currentIndex] = {
@@ -370,6 +398,11 @@ async function generateBatchCoaching(items: BatchCoachingItem[]): Promise<BatchC
           adminMessage: `⚠️ [${item.riderName}] AI 생성 중 오류가 발생했습니다.`,
           riderMessage: `${item.riderName}님, AI 코칭 생성 중 문제가 발생했습니다.`,
           isTemplate: true,
+          source: "local-template",
+          fallbackUsed: true,
+          fallbackReason: "API_ERROR",
+          provider: "template",
+          aiMode: "auto",
           error: error instanceof Error ? error.message : "Unknown error"
         };
       }

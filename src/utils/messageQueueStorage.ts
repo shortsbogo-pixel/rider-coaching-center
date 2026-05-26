@@ -70,6 +70,13 @@ export function createMessageQueueItem(input: CreateMessageQueueItemInput): Mess
     trendLabel: input.trendLabel,
     adminMessage: input.adminMessage,
     riderMessage: input.riderMessage,
+    isTemplate: input.isTemplate,
+    source: input.source,
+    fallbackReason: input.fallbackReason,
+    provider: input.provider,
+    aiMode: input.aiMode,
+    templateKey: input.templateKey,
+    templateVersion: input.templateVersion,
     kakaoMessage: formatKakaoRiderMessage({
       riderName: input.riderName,
       riderMessage: input.riderMessage,

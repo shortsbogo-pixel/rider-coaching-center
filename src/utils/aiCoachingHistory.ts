@@ -1,4 +1,4 @@
-import type { AICoachingSource, LocalAICoachingHistoryEntry } from "../types/aiCoaching";
+import type { AICoachingSource, AIProviderName, LocalAICoachingHistoryEntry } from "../types/aiCoaching";
 import type { RiderRiskLevel } from "../types/rider";
 
 const AI_COACHING_HISTORY_KEY = "rider-coaching-ai-history-v1";
@@ -19,6 +19,12 @@ interface CreateAICoachingHistoryEntryInput {
   riderMessage: string;
   isTemplate: boolean;
   source: AICoachingSource;
+  fallbackUsed?: boolean;
+  fallbackReason?: LocalAICoachingHistoryEntry["fallbackReason"];
+  provider?: AIProviderName;
+  aiMode?: LocalAICoachingHistoryEntry["aiMode"];
+  templateKey?: string;
+  templateVersion?: string;
   createdAt?: string;
 }
 
@@ -63,6 +69,12 @@ export function createAICoachingHistoryEntry(input: CreateAICoachingHistoryEntry
     riderMessage: input.riderMessage,
     isTemplate: input.isTemplate,
     source: input.source,
+    fallbackUsed: input.fallbackUsed,
+    fallbackReason: input.fallbackReason,
+    provider: input.provider,
+    aiMode: input.aiMode,
+    templateKey: input.templateKey,
+    templateVersion: input.templateVersion,
     createdAt
   };
 }

@@ -1,5 +1,8 @@
 import type { RiderRiskLevel } from "../../../src/types/rider";
 import type { AICoachingAnalysisContext } from "../../../src/utils/riderTrendAnalysis";
+import type { AIFallbackReason, AIProviderName } from "../../../src/types/aiCoaching";
+import { createAIProvider, getAIProviderConfig } from "./aiProvider/providerFactory";
+import { classifyAIFallbackReason, createTemplateCoachingMessages, getAIModeConfig, type AIMode } from "./aiTemplateService";
 
 interface AICoachingInput {
   riderName: string;
@@ -13,7 +16,16 @@ interface AICoachingInput {
 interface AICoachingOutput {
   adminMessage: string;
   riderMessage: string;
+  kakaoMessage?: string;
+  smsMessage?: string;
   isTemplate: boolean;
+  source?: "gemma4" | "template" | "local-template";
+  fallbackUsed?: boolean;
+  fallbackReason?: AIFallbackReason;
+  provider?: AIProviderName;
+  aiMode?: AIMode;
+  templateKey?: string;
+  templateVersion?: string;
 }
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
@@ -27,12 +39,34 @@ export interface OllamaStatusResult {
   gemmaResponding: boolean;
   checkedAt: string;
   fallbackUsed: boolean;
+  fallbackReason?: AIFallbackReason;
+  provider: AIProviderName;
+  aiProvider: AIProviderName;
+  aiMode: AIMode;
+  fallbackEnabled: boolean;
   message: string;
 }
 
 function readPositiveInt(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function buildTemplateFallbackMessages(input: AICoachingInput, fallbackReason: AIFallbackReason): AICoachingOutput {
+  const template = createTemplateCoachingMessages({
+    riderName: input.riderName,
+    riskLevel: input.riskLevel,
+    previousWeekCompleted: input.previousWeekCompleted,
+    currentWeekCompleted: input.currentWeekCompleted,
+    changeRate: input.changeRate,
+    analysisContext: input.analysisContext
+  });
+
+  return {
+    ...template,
+    fallbackUsed: true,
+    fallbackReason
+  };
 }
 
 export function buildOllamaGenerateRequestBody(prompt: string) {
@@ -193,7 +227,9 @@ function parseOllamaResponse(response: string, input: AICoachingInput): AICoachi
   return {
     adminMessage,
     riderMessage,
-    isTemplate: false
+    isTemplate: false,
+    source: "gemma4",
+    fallbackUsed: false
   };
 }
 
@@ -221,6 +257,14 @@ export async function generateAICoachingMessages(input: AICoachingInput): Promis
   }
 
   // 재시도 설정
+  return createAIProvider(getAIProviderConfig()).generateCoachingMessage(input);
+
+  /*
+  const aiModeConfig = getAIModeConfig();
+  if (aiModeConfig.mode === "template") {
+    return buildTemplateFallbackMessages(input, "AI_MODE_TEMPLATE");
+  }
+
   const retries = Math.max(1, Number(process.env.OLLAMA_RETRY_COUNT ?? 3));
   const baseBackoffMs = Math.max(100, Number(process.env.OLLAMA_RETRY_BASE_MS ?? 500));
   const maxBackoffMs = Math.max(baseBackoffMs, Number(process.env.OLLAMA_RETRY_MAX_MS ?? 5000));
@@ -253,16 +297,39 @@ export async function generateAICoachingMessages(input: AICoachingInput): Promis
   }
 
   console.warn("[AI Coaching] All Ollama attempts failed, falling back to template.", lastError);
-  return getTemplateMessages(input);
+  if (!aiModeConfig.fallbackEnabled) {
+    throw lastError instanceof Error ? lastError : new Error("AI fallback is disabled.");
+  }
+  return buildTemplateFallbackMessages(input, classifyAIFallbackReason(lastError));
+  */
 }
 
 // 테스트용: 기본 템플릿만 반환
 export function getDefaultCoachingMessages(input: AICoachingInput): AICoachingOutput {
-  return getTemplateMessages(input);
+  return buildTemplateFallbackMessages(input, "AI_MODE_TEMPLATE");
 }
 
 export async function checkOllamaStatus(): Promise<OllamaStatusResult> {
+  return createAIProvider(getAIProviderConfig()).checkStatus();
+
+  /*
   const checkedAt = new Date().toISOString();
+  const aiModeConfig = getAIModeConfig();
+
+  if (aiModeConfig.mode === "template") {
+    return {
+      ollamaConnected: false,
+      model: OLLAMA_MODEL,
+      gemmaResponding: false,
+      checkedAt,
+      fallbackUsed: true,
+      fallbackReason: "AI_MODE_TEMPLATE",
+      aiMode: aiModeConfig.mode,
+      fallbackEnabled: aiModeConfig.fallbackEnabled,
+      message: "현재 AI_MODE=template 설정으로 기본 템플릿 운영 모드입니다."
+    };
+  }
+
   const controller = new AbortController();
   const timeoutMs = readPositiveInt(process.env.OLLAMA_STATUS_TIMEOUT_MS, 30000);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -282,6 +349,9 @@ export async function checkOllamaStatus(): Promise<OllamaStatusResult> {
         gemmaResponding: false,
         checkedAt,
         fallbackUsed: true,
+        fallbackReason: "API_ERROR",
+        aiMode: aiModeConfig.mode,
+        fallbackEnabled: aiModeConfig.fallbackEnabled,
         message: `Ollama responded with status ${response.status}`
       };
     }
@@ -293,6 +363,9 @@ export async function checkOllamaStatus(): Promise<OllamaStatusResult> {
       gemmaResponding: typeof data.response === "string" && data.response.trim().length > 0,
       checkedAt,
       fallbackUsed: !(typeof data.response === "string" && data.response.trim().length > 0),
+      fallbackReason: typeof data.response === "string" && data.response.trim().length > 0 ? undefined : "API_ERROR",
+      aiMode: aiModeConfig.mode,
+      fallbackEnabled: aiModeConfig.fallbackEnabled,
       message: typeof data.response === "string" && data.response.trim().length > 0 ? "Gemma 4 연결 정상" : "Gemma 4 응답이 비어 있습니다."
     };
   } catch (error) {
@@ -303,7 +376,11 @@ export async function checkOllamaStatus(): Promise<OllamaStatusResult> {
       gemmaResponding: false,
       checkedAt,
       fallbackUsed: true,
+      fallbackReason: classifyAIFallbackReason(error),
+      aiMode: aiModeConfig.mode,
+      fallbackEnabled: aiModeConfig.fallbackEnabled,
       message: error instanceof Error ? error.message : "Ollama status check failed"
     };
   }
+  */
 }

@@ -1,4 +1,4 @@
-import type { LocalAICoachingHistoryEntry } from "../types/aiCoaching";
+import type { AIFallbackReason, LocalAICoachingHistoryEntry } from "../types/aiCoaching";
 import { managerActionChecklistItems, type ManagerActionChecklistRecord } from "./managerActionChecklist";
 
 export interface MonthlyOperationRiderInput {
@@ -34,6 +34,9 @@ export interface MonthlyOperationReport extends MonthlyOperationReportSummary {
   nextMonthActions: string[];
   isTemplate: boolean;
   source: "gemma4" | "template";
+  fallbackUsed?: boolean;
+  fallbackReason?: AIFallbackReason;
+  templateVersion?: string;
   createdAt: string;
 }
 

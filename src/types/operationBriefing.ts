@@ -1,4 +1,5 @@
 import type { RiderRiskLevel } from "./rider";
+import type { AIFallbackReason, AIProviderName } from "./aiCoaching";
 import type { RiderTrendLabel } from "../utils/riderTrendAnalysis";
 
 export type OperationBriefingSource = "gemma4" | "template";
@@ -63,6 +64,11 @@ export interface OperationBriefingResult {
   dataQualityNotes: string;
   isTemplate: boolean;
   source: OperationBriefingSource;
+  fallbackUsed?: boolean;
+  fallbackReason?: AIFallbackReason;
+  provider?: AIProviderName;
+  aiMode?: "auto" | "gemma" | "template";
+  templateVersion?: string;
   createdAt: string;
 }
 

@@ -1,5 +1,13 @@
 # Beta Deployment Options
 
+## AI Provider Notes For Beta Deployment
+
+- Manus beta deployments should start with `AI_PROVIDER=template` and `AI_MODE=template`.
+- Local PC + tunnel deployments can use `AI_PROVIDER=ollama` when the Ollama host is reachable and stable.
+- Future external LLM trials can use `AI_PROVIDER=openai` or `AI_PROVIDER=gemini`, but API keys must be stored only in environment variables.
+- Before any external LLM trial, minimize rider data sent to the provider and exclude phone numbers, raw Excel rows, settlement details, and admin-only notes.
+- A privacy/security review is required before production use of OpenAI/Gemini providers.
+
 라이더 코칭센터 Beta MVP를 외부 테스터에게 공유하기 전 선택할 수 있는 배포 방식을 비교한다. 현재 앱은 로컬 Gemma 4와 JSON 파일 저장을 사용하므로, 외부 URL 공유 편의성과 데이터 저장 안정성을 함께 봐야 한다.
 
 ## 비교 요약

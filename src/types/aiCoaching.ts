@@ -1,6 +1,14 @@
 import type { RiderRiskLevel } from "./rider";
 
 export type AICoachingSource = "gemma4" | "template" | "local-template" | "server-history";
+export type AIProviderName = "ollama" | "template" | "openai" | "gemini";
+export type AIFallbackReason =
+  | "AI_MODE_TEMPLATE"
+  | "OLLAMA_UNAVAILABLE"
+  | "GEMMA_TIMEOUT"
+  | "GEMMA_MEMORY_OR_RUNTIME_ERROR"
+  | "API_ERROR"
+  | "MANUS_DEPLOYMENT_FALLBACK";
 
 export interface AICoachingHistoryEntry {
   id: string;
@@ -14,6 +22,13 @@ export interface AICoachingHistoryEntry {
   adminMessage: string;
   riderMessage: string;
   isTemplate: boolean;
+  source?: AICoachingSource;
+  fallbackUsed?: boolean;
+  fallbackReason?: AIFallbackReason;
+  provider?: AIProviderName;
+  aiMode?: "auto" | "gemma" | "template";
+  templateKey?: string;
+  templateVersion?: string;
   generatedAt: string;
 }
 
@@ -29,6 +44,12 @@ export interface LocalAICoachingHistoryEntry {
   riderMessage: string;
   isTemplate: boolean;
   source: AICoachingSource;
+  fallbackUsed?: boolean;
+  fallbackReason?: AIFallbackReason;
+  provider?: AIProviderName;
+  aiMode?: "auto" | "gemma" | "template";
+  templateKey?: string;
+  templateVersion?: string;
   createdAt: string;
 }
 
@@ -66,6 +87,9 @@ export interface WeeklyAIBriefingResult {
   messageForManagers: string;
   isTemplate: boolean;
   source: WeeklyAIBriefingSource;
+  fallbackUsed?: boolean;
+  fallbackReason?: AIFallbackReason;
+  templateVersion?: string;
   createdAt: string;
 }
 

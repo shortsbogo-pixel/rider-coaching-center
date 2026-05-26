@@ -47,6 +47,7 @@ export function AICoachingHistoryPanel({ history, latestCreatedAt }: AICoachingH
                 </summary>
                 <div className="ai-history-entry-body">
                   <span className={`ai-result-badge ${entry.isTemplate ? "template" : "generated"}`}>{sourceLabel(entry.source)}</span>
+                  {entry.isTemplate && entry.fallbackReason ? <small className="ai-fallback-note">fallback: {entry.fallbackReason}</small> : null}
                   <div>
                     <strong>관리자용 문구</strong>
                     <p>{entry.adminMessage}</p>

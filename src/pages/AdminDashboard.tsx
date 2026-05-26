@@ -29,6 +29,8 @@ import type { RiderGrade, RiderMetrics, RiderProfile, RiderRiskLevel } from "../
 import type {
   AICoachingHistoryEntry,
   AICoachingSource,
+  AIFallbackReason,
+  AIProviderName,
   LocalAICoachingHistoryEntry,
   LocalWeeklyAIBriefingEntry,
   WeeklyAIBriefingResult
@@ -136,6 +138,12 @@ interface AICoachingResultState {
   riderMessage: string;
   isTemplate: boolean;
   source?: AICoachingSource;
+  fallbackUsed?: boolean;
+  fallbackReason?: AIFallbackReason;
+  provider?: AIProviderName;
+  aiMode?: "auto" | "gemma" | "template";
+  templateKey?: string;
+  templateVersion?: string;
   createdAt?: string;
 }
 
@@ -789,6 +797,12 @@ export function AdminDashboard() {
             riderMessage: item.riderMessage,
             isTemplate: item.isTemplate,
             source: item.isTemplate ? "template" : "gemma4",
+            fallbackUsed: item.fallbackUsed,
+            fallbackReason: item.fallbackReason,
+            provider: item.provider,
+            aiMode: item.aiMode,
+            templateKey: item.templateKey,
+            templateVersion: item.templateVersion,
             createdAt: item.generatedAt
           };
           return acc;
@@ -1058,7 +1072,7 @@ export function AdminDashboard() {
     setOperationSaveDetail(detail);
   }
 
-  async function audit(actionType: OperationActionType, summary: string, extra?: { riderName?: string; weekKey?: string; monthKey?: string }) {
+  async function audit(actionType: OperationActionType, summary: string, extra?: Partial<Pick<OperationLogEntry, "riderName" | "weekKey" | "monthKey" | "provider" | "aiMode" | "fallbackUsed" | "fallbackReason" | "templateKey" | "templateVersion">>) {
     const savedToServer = await writeOperationLog({ actionType, summary, ...extra });
     if (!savedToServer) {
       refreshLocalOperationLogs();
@@ -1078,7 +1092,28 @@ export function AdminDashboard() {
       saveAICoachingHistoryEntry(entry);
       setLocalAICoachingHistory((current) => [...current.filter((item) => item.id !== entry.id), entry]);
       setSaveStatus("server", "AI 코칭 이력을 서버에 저장했습니다.");
-      await audit(actionType, `${entry.riderName} AI 코칭 생성`, { riderName: entry.riderName, weekKey: entry.weekKey });
+      await audit(actionType, `${entry.riderName} AI 코칭 생성`, {
+        riderName: entry.riderName,
+        weekKey: entry.weekKey,
+        provider: entry.provider,
+        aiMode: entry.aiMode,
+        fallbackUsed: entry.fallbackUsed,
+        fallbackReason: entry.fallbackReason,
+        templateKey: entry.templateKey,
+        templateVersion: entry.templateVersion
+      });
+      if (entry.isTemplate) {
+        await audit(actionType, `${entry.riderName} AI template fallback: provider=${entry.provider ?? "template"}, reason=${entry.fallbackReason ?? "TEMPLATE"}`, {
+          riderName: entry.riderName,
+          weekKey: entry.weekKey,
+          provider: entry.provider,
+          aiMode: entry.aiMode,
+          fallbackUsed: entry.fallbackUsed,
+          fallbackReason: entry.fallbackReason,
+          templateKey: entry.templateKey,
+          templateVersion: entry.templateVersion
+        });
+      }
       return true;
     } catch {
       const saved = saveAICoachingHistoryEntry(entry);
@@ -1139,7 +1174,14 @@ export function AdminDashboard() {
       saveOperationBriefingEntry(entry);
       setLocalOperationBriefingHistory((current) => [entry, ...current.filter((item) => item.id !== entry.id)]);
       setSaveStatus("server", "AI 운영본부 브리핑을 서버에 저장했습니다.");
-      await audit(actionType, `${entry.weekKey} AI 운영본부 브리핑 생성`, { weekKey: entry.weekKey });
+      await audit(actionType, `${entry.weekKey} AI 운영본부 브리핑 생성`, {
+        weekKey: entry.weekKey,
+        provider: entry.provider,
+        aiMode: entry.aiMode,
+        fallbackUsed: entry.fallbackUsed,
+        fallbackReason: entry.fallbackReason,
+        templateVersion: entry.templateVersion
+      });
       return true;
     } catch {
       const saved = saveOperationBriefingEntry(entry);
@@ -1256,6 +1298,9 @@ export function AdminDashboard() {
           : fallback.messageForManagers,
       isTemplate: !!result.isTemplate,
       source: result.source === "gemma4" ? "gemma4" : "template",
+      fallbackUsed: typeof result.fallbackUsed === "boolean" ? result.fallbackUsed : fallback.fallbackUsed,
+      fallbackReason: typeof result.fallbackReason === "string" ? (result.fallbackReason as AIFallbackReason) : fallback.fallbackReason,
+      templateVersion: typeof result.templateVersion === "string" ? result.templateVersion : fallback.templateVersion,
       createdAt: typeof result.createdAt === "string" && result.createdAt.trim() ? result.createdAt : fallback.createdAt
     };
   }
@@ -1281,6 +1326,9 @@ export function AdminDashboard() {
       nextMonthActions: actions.length ? actions : fallback.nextMonthActions,
       isTemplate: !!result.isTemplate,
       source: result.source === "gemma4" ? "gemma4" : "template",
+      fallbackUsed: typeof result.fallbackUsed === "boolean" ? result.fallbackUsed : fallback.fallbackUsed,
+      fallbackReason: typeof result.fallbackReason === "string" ? (result.fallbackReason as AIFallbackReason) : fallback.fallbackReason,
+      templateVersion: typeof result.templateVersion === "string" ? result.templateVersion : fallback.templateVersion,
       createdAt: typeof result.createdAt === "string" && result.createdAt.trim() ? result.createdAt : fallback.createdAt
     };
   }
@@ -1381,12 +1429,27 @@ export function AdminDashboard() {
           : fallback.dataQualityNotes,
       isTemplate: !!result.isTemplate,
       source: result.source === "gemma4" ? "gemma4" : "template",
+      fallbackUsed: typeof result.fallbackUsed === "boolean" ? result.fallbackUsed : fallback.fallbackUsed,
+      fallbackReason: typeof result.fallbackReason === "string" ? result.fallbackReason : fallback.fallbackReason,
+      provider: typeof result.provider === "string" ? (result.provider as AIProviderName) : fallback.provider,
+      aiMode: result.aiMode === "template" || result.aiMode === "gemma" || result.aiMode === "auto" ? result.aiMode : fallback.aiMode,
+      templateVersion: typeof result.templateVersion === "string" ? result.templateVersion : fallback.templateVersion,
       createdAt: typeof result.createdAt === "string" && result.createdAt.trim() ? result.createdAt : fallback.createdAt
     };
   }
 
   async function recordOperationBriefing(result: OperationBriefingResult, actionType: OperationActionType = "OPERATION_BRIEFING_GENERATED") {
     const entry = createOperationBriefingEntry(result, operationBriefingSummary);
+    if (result.isTemplate) {
+      await audit(actionType, `${result.weekKey} operation briefing template fallback: provider=${result.provider ?? "template"}, reason=${result.fallbackReason ?? "TEMPLATE"}`, {
+        weekKey: result.weekKey,
+        provider: result.provider,
+        aiMode: result.aiMode,
+        fallbackUsed: result.fallbackUsed,
+        fallbackReason: result.fallbackReason,
+        templateVersion: result.templateVersion
+      });
+    }
     await saveOperationBriefing(entry, actionType);
     return entry;
   }
@@ -1463,6 +1526,12 @@ export function AdminDashboard() {
       riderMessage: latest.riderMessage,
       isTemplate: latest.isTemplate,
       source: latest.source,
+      fallbackUsed: latest.fallbackUsed,
+      fallbackReason: latest.fallbackReason,
+      provider: latest.provider,
+      aiMode: latest.aiMode,
+      templateKey: latest.templateKey,
+      templateVersion: latest.templateVersion,
       createdAt: latest.createdAt
     };
   }
@@ -1483,6 +1552,12 @@ export function AdminDashboard() {
     riderMessage: string;
     isTemplate: boolean;
     source: AICoachingSource;
+    fallbackUsed?: boolean;
+    fallbackReason?: AIFallbackReason;
+    provider?: AIProviderName;
+    aiMode?: "auto" | "gemma" | "template";
+    templateKey?: string;
+    templateVersion?: string;
   }) {
     const entry = createAICoachingHistoryEntry({
       riderName: params.riderName,
@@ -1494,7 +1569,13 @@ export function AdminDashboard() {
       adminMessage: params.adminMessage,
       riderMessage: params.riderMessage,
       isTemplate: params.isTemplate,
-      source: params.source
+      source: params.source,
+      fallbackUsed: params.fallbackUsed,
+      fallbackReason: params.fallbackReason,
+      provider: params.provider,
+      aiMode: params.aiMode,
+      templateKey: params.templateKey,
+      templateVersion: params.templateVersion
     });
 
     await saveAICoachingEntry(entry);
@@ -1505,6 +1586,12 @@ export function AdminDashboard() {
         riderMessage: entry.riderMessage,
         isTemplate: entry.isTemplate,
         source: entry.source,
+        fallbackUsed: entry.fallbackUsed,
+        fallbackReason: entry.fallbackReason,
+        provider: entry.provider,
+        aiMode: entry.aiMode,
+        templateKey: entry.templateKey,
+        templateVersion: entry.templateVersion,
         createdAt: entry.createdAt
       }
     }));
@@ -1555,7 +1642,13 @@ export function AdminDashboard() {
           adminMessage: `⚠️ [${riderName}] AI 서비스가 응답하지 않아 기본 템플릿을 사용합니다.`,
           riderMessage: `${riderName}님, 현재 외부 AI 응답이 불가하여 기본 코칭 문구를 안내드립니다. ${currentWeekCompleted}건`,
           isTemplate: true,
-          source: "local-template"
+          source: "local-template",
+          fallbackUsed: true,
+          fallbackReason: "API_ERROR",
+          provider: "template",
+          aiMode: "auto",
+          templateKey: "local-template-fallback",
+          templateVersion: "v1"
         });
       } else {
         await recordAICoachingResult({
@@ -1569,7 +1662,13 @@ export function AdminDashboard() {
           adminMessage: data.adminMessage,
           riderMessage: data.riderMessage,
           isTemplate: !!data.isTemplate,
-          source: data.isTemplate ? "template" : "gemma4"
+          source: data.source ?? (data.isTemplate ? "template" : "gemma4"),
+          fallbackUsed: data.fallbackUsed,
+          fallbackReason: data.fallbackReason,
+          provider: data.provider,
+          aiMode: data.aiMode,
+          templateKey: data.templateKey,
+          templateVersion: data.templateVersion
         });
       }
     } catch (error) {
@@ -1593,7 +1692,13 @@ export function AdminDashboard() {
             adminMessage: data.adminMessage,
             riderMessage: data.riderMessage,
             isTemplate: !!data.isTemplate,
-            source: "template"
+            source: data.source ?? "template",
+            fallbackUsed: data.fallbackUsed,
+            fallbackReason: data.fallbackReason,
+            provider: data.provider,
+            aiMode: data.aiMode,
+            templateKey: data.templateKey,
+            templateVersion: data.templateVersion
           });
         }
       } catch {
@@ -1608,7 +1713,13 @@ export function AdminDashboard() {
           adminMessage: `⚠️ [${riderName}] AI 호출 실패 - 기본 템플릿 사용`,
           riderMessage: `${riderName}님, 현재 AI 서비스에 접근할 수 없어 기본 안내 문구를 표시합니다. (${currentWeekCompleted}건)`,
           isTemplate: true,
-          source: "local-template"
+          source: "local-template",
+          fallbackUsed: true,
+          fallbackReason: "API_ERROR",
+          provider: "template",
+          aiMode: "auto",
+          templateKey: "local-template-fallback",
+          templateVersion: "v1"
         });
       }
     } finally {
@@ -1723,6 +1834,13 @@ export function AdminDashboard() {
     trendLabel?: MessageQueueItem["trendLabel"];
     adminMessage: string;
     riderMessage: string;
+    isTemplate?: boolean;
+    source?: AICoachingSource;
+    fallbackReason?: AIFallbackReason;
+    provider?: AIProviderName;
+    aiMode?: "auto" | "gemma" | "template";
+    templateKey?: string;
+    templateVersion?: string;
     currentWeekCompleted: number;
     changeRate: number;
   }) {
@@ -1888,13 +2006,20 @@ export function AdminDashboard() {
         adminMessage: string;
         riderMessage: string;
         isTemplate: boolean;
+        source?: AICoachingSource;
+        fallbackUsed?: boolean;
+        fallbackReason?: AIFallbackReason;
+        provider?: AIProviderName;
+        aiMode?: "auto" | "gemma" | "template";
+        templateKey?: string;
+        templateVersion?: string;
         error?: string;
       }>;
 
       const nextResults: Record<string, AICoachingResultState> = {};
       for (const item of results) {
         const sourceItem = items.find((candidate) => candidate.riderId === item.riderId);
-        const source = item.isTemplate ? "template" : "gemma4";
+        const source = item.source ?? (item.isTemplate ? "template" : "gemma4");
         const entry = createAICoachingHistoryEntry({
           riderName: sourceItem?.riderName ?? item.riderId,
           weekKey: selectedWeekKey,
@@ -1905,7 +2030,13 @@ export function AdminDashboard() {
           adminMessage: item.adminMessage,
           riderMessage: item.riderMessage,
           isTemplate: item.isTemplate,
-          source
+          source,
+          fallbackUsed: item.fallbackUsed,
+          fallbackReason: item.fallbackReason,
+          provider: item.provider,
+          aiMode: item.aiMode,
+          templateKey: item.templateKey,
+          templateVersion: item.templateVersion
         });
         await saveAICoachingEntry(entry);
         nextResults[`rider-${item.riderId}`] = {
@@ -1913,6 +2044,12 @@ export function AdminDashboard() {
           riderMessage: item.riderMessage,
           isTemplate: item.isTemplate,
           source,
+          fallbackUsed: item.fallbackUsed,
+          fallbackReason: item.fallbackReason,
+          provider: item.provider,
+          aiMode: item.aiMode,
+          templateKey: item.templateKey,
+          templateVersion: item.templateVersion,
           createdAt: entry.createdAt
         };
       }
@@ -2293,6 +2430,9 @@ export function AdminDashboard() {
                     ) : null}
                   </div>
                 ) : null}
+                {visibleAiResult?.isTemplate ? (
+                  <small className="ai-fallback-note">템플릿 모드 · {visibleAiResult.fallbackReason ?? "fallback"}</small>
+                ) : null}
                 {cardRiderName ? <AICoachingHistoryPanel history={cardHistory} latestCreatedAt={visibleAiResult?.createdAt} /> : null}
                 {cardRiderName ? (
                   <ManagerActionChecklist
@@ -2369,6 +2509,13 @@ export function AdminDashboard() {
                                 trendLabel: cardTrendAnalysis?.trendLabel,
                                 adminMessage: visibleAiResult.adminMessage,
                                 riderMessage: visibleAiResult.riderMessage,
+                                isTemplate: visibleAiResult.isTemplate,
+                                source: visibleAiResult.source,
+                                fallbackReason: visibleAiResult.fallbackReason,
+                                provider: visibleAiResult.provider,
+                                aiMode: visibleAiResult.aiMode,
+                                templateKey: visibleAiResult.templateKey,
+                                templateVersion: visibleAiResult.templateVersion,
                                 currentWeekCompleted: card.currentCompleted ?? 0,
                                 changeRate: card.changeRatePercent ?? 0
                               })
@@ -2756,6 +2903,9 @@ export function AdminDashboard() {
                       {visibleAiResult.isTemplate ? "기본 템플릿 사용" : "Gemma 4 생성"}
                     </span>
                   ) : null}
+                  {visibleAiResult?.isTemplate ? (
+                    <small className="ai-fallback-note">템플릿 모드 · {visibleAiResult.fallbackReason ?? "fallback"}</small>
+                  ) : null}
                   <AICoachingHistoryPanel history={riderHistory} latestCreatedAt={visibleAiResult?.createdAt} />
                   <ManagerActionChecklist
                     riderName={metric.displayName}
@@ -2777,6 +2927,13 @@ export function AdminDashboard() {
                             trendLabel: trendAnalysis.trendLabel,
                             adminMessage: visibleAiResult.adminMessage,
                             riderMessage: visibleAiResult.riderMessage,
+                            isTemplate: visibleAiResult.isTemplate,
+                            source: visibleAiResult.source,
+                            fallbackReason: visibleAiResult.fallbackReason,
+                            provider: visibleAiResult.provider,
+                            aiMode: visibleAiResult.aiMode,
+                            templateKey: visibleAiResult.templateKey,
+                            templateVersion: visibleAiResult.templateVersion,
                             currentWeekCompleted: metric.totalCompleted,
                             changeRate: changeRateForAI
                           })

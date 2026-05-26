@@ -50,6 +50,9 @@ export function OperationBriefingPanel({
           <span className={`ai-result-badge ${latestBriefing?.isTemplate ? "template" : latestBriefing ? "generated" : "template"}`}>
             {latestBriefing ? (latestBriefing.isTemplate ? "기본 템플릿 사용" : "Gemma 4 생성") : "브리핑 대기"}
           </span>
+          {latestBriefing?.isTemplate ? (
+            <small className="ai-fallback-note">템플릿 모드 · {latestBriefing.fallbackReason ?? "fallback"}</small>
+          ) : null}
           <button className="ai-coaching-button" type="button" disabled={!weekKey || loading} onClick={onGenerate}>
             {loading ? "브리핑 생성 중…" : latestBriefing ? "AI 운영본부 브리핑 재생성" : "AI 운영본부 브리핑 생성"}
           </button>

@@ -21,6 +21,11 @@ Required local defaults:
 PORT=4100
 FRONTEND_PORT=5174
 VITE_API_BASE_URL=http://localhost:4100
+AI_PROVIDER=template
+AI_MODE=auto
+AI_FALLBACK_ENABLED=true
+OPENAI_API_KEY=
+GEMINI_API_KEY=
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=gemma4:e2b
 OLLAMA_NUM_CTX=1024
@@ -31,6 +36,14 @@ NODE_ENV=development
 ```
 
 For production, replace `VITE_API_BASE_URL` with the deployed backend origin and set `NODE_ENV=production`.
+
+AI provider guidance:
+
+- Manus deployments should use `AI_PROVIDER=template` and `AI_MODE=template` unless a reachable model/API is intentionally configured.
+- Local Gemma 4 deployments can use `AI_PROVIDER=ollama`.
+- Future external providers can use `AI_PROVIDER=openai` or `AI_PROVIDER=gemini`; keep API keys only in runtime environment variables.
+- Send the minimum rider data needed for coaching/briefing generation. Do not send raw Excel files, phone numbers, settlement details, or admin-only notes to external APIs.
+- Review privacy and security before production use of any external LLM provider.
 
 ## 3. Ollama / Gemma 4 Check
 

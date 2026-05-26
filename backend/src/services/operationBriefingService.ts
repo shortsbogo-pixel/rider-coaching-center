@@ -1,5 +1,7 @@
 import type { OperationBriefingResult, OperationBriefingSummaryInput } from "../../../src/types/operationBriefing";
 import { createTemplateOperationBriefing } from "../../../src/utils/operationBriefingSummary";
+import { createAIProvider, getAIProviderConfig } from "./aiProvider/providerFactory";
+import { classifyAIFallbackReason, getAIModeConfig } from "./aiTemplateService";
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:e2b";
@@ -73,6 +75,7 @@ function parseOllamaOperationBriefing(response: string, weekKey: string, summary
     dataQualityNotes: cleanText(parsed.dataQualityNotes, fallback.dataQualityNotes),
     isTemplate: false,
     source: "gemma4",
+    fallbackUsed: false,
     createdAt: new Date().toISOString()
   };
 }
@@ -115,10 +118,30 @@ export function getDefaultOperationBriefing(weekKey: string, summary: OperationB
 }
 
 export async function generateOperationBriefing(weekKey: string, summary: OperationBriefingSummaryInput): Promise<OperationBriefingResult> {
+  return createAIProvider(getAIProviderConfig()).generateOperationBriefing(weekKey, summary);
+
+  /*
+  const aiModeConfig = getAIModeConfig();
+  if (aiModeConfig.mode === "template") {
+    return {
+      ...getDefaultOperationBriefing(weekKey, summary),
+      fallbackReason: "AI_MODE_TEMPLATE",
+      templateVersion: "v1"
+    };
+  }
+
   try {
     return await generateWithOllama(weekKey, summary);
   } catch (error) {
     console.warn("[Operation Briefing] Falling back to template.", error instanceof Error ? error.message : error);
-    return getDefaultOperationBriefing(weekKey, summary);
+    if (!aiModeConfig.fallbackEnabled) {
+      throw error instanceof Error ? error : new Error("AI fallback is disabled.");
+    }
+    return {
+      ...getDefaultOperationBriefing(weekKey, summary),
+      fallbackReason: classifyAIFallbackReason(error),
+      templateVersion: "v1"
+    };
   }
+  */
 }

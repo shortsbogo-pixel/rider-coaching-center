@@ -95,6 +95,12 @@ export function createOperationLog(input: {
   riderName?: string;
   weekKey?: string;
   monthKey?: string;
+  provider?: OperationLogEntry["provider"];
+  aiMode?: OperationLogEntry["aiMode"];
+  fallbackUsed?: OperationLogEntry["fallbackUsed"];
+  fallbackReason?: OperationLogEntry["fallbackReason"];
+  templateKey?: string;
+  templateVersion?: string;
 }): OperationLogEntry {
   const user = getStoredUser();
   const createdAt = new Date().toISOString();
@@ -106,6 +112,12 @@ export function createOperationLog(input: {
     riderName: input.riderName,
     weekKey: input.weekKey,
     monthKey: input.monthKey,
+    provider: input.provider,
+    aiMode: input.aiMode,
+    fallbackUsed: input.fallbackUsed,
+    fallbackReason: input.fallbackReason,
+    templateKey: input.templateKey,
+    templateVersion: input.templateVersion,
     summary: input.summary,
     createdAt
   };

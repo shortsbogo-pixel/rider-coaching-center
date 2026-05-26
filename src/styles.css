@@ -1543,6 +1543,17 @@ input {
   color: #12694e;
 }
 
+.ai-fallback-note {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  color: #775216;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .weekly-ai-briefing-panel {
   display: grid;
   gap: 14px;
@@ -2281,6 +2292,11 @@ input {
 .operation-check-card.warning {
   border-color: #f4d184;
   background: #fff9eb;
+}
+
+.operation-status-card.info {
+  border-color: #bfdbfe;
+  background: #eff6ff;
 }
 
 .operation-check-card.danger {

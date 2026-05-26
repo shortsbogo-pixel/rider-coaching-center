@@ -1,3 +1,5 @@
+import type { AIFallbackReason, AIProviderName } from "./aiCoaching";
+
 export type OperationSaveStatus = "server" | "local" | "failed";
 
 export type OperationActionType =
@@ -35,6 +37,12 @@ export interface OperationLogEntry {
   riderName?: string;
   weekKey?: string;
   monthKey?: string;
+  provider?: AIProviderName;
+  aiMode?: "auto" | "gemma" | "template";
+  fallbackUsed?: boolean;
+  fallbackReason?: AIFallbackReason;
+  templateKey?: string;
+  templateVersion?: string;
   summary: string;
   createdAt: string;
 }

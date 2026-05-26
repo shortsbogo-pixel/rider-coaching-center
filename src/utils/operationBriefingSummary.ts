@@ -174,6 +174,9 @@ export function createTemplateOperationBriefing(weekKey: string, summary: Operat
       stats.dataWarningCount > 0 ? summary.dataWarnings.slice(0, 3).join(" / ") : "현재 표시할 데이터 검수 경고는 없습니다.",
     isTemplate: true,
     source: "template",
+    fallbackUsed: true,
+    fallbackReason: "AI_MODE_TEMPLATE",
+    templateVersion: "v1",
     createdAt: new Date().toISOString()
   };
 }

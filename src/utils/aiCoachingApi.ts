@@ -1,4 +1,5 @@
 import { getAuthHeader } from "./authStore";
+import type { AIFallbackReason, AIProviderName } from "../types/aiCoaching";
 
 export interface AIStatusResult {
   ollamaConnected: boolean;
@@ -6,6 +7,11 @@ export interface AIStatusResult {
   gemmaResponding: boolean;
   checkedAt: string;
   fallbackUsed: boolean;
+  fallbackReason?: AIFallbackReason;
+  provider?: AIProviderName;
+  aiProvider?: AIProviderName;
+  aiMode?: "auto" | "gemma" | "template";
+  fallbackEnabled?: boolean;
   message: string;
 }
 
