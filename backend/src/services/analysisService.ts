@@ -9,7 +9,7 @@ import { riderRepository } from "../repositories/riderRepository";
 import { loadParsedOrders } from "./excelService";
 
 const segments: TimeSegment[] = ["Breakfast", "Lunch_Peak", "Post_Lunch", "Dinner_Peak", "Post_Dinner"];
-const deliveryTypes: DeliveryType[] = ["단건배달", "멀티배달1", "멀티배달2", "멀티배달3", "멀티배달4"];
+const deliveryTypes: DeliveryType[] = ["단건배달", "멀티배달1", "멀티배달2", "멀티배달3", "멀티배달4", "확인필요"];
 
 export async function getAnalysisOrders() {
   const parsedOrders = await loadParsedOrders();
@@ -41,7 +41,7 @@ function buildAnalysisCache(metrics: RiderMetrics[], weekKey: string): AnalysisC
     segments.map((segment) => [segment, metrics.reduce((sum, metric) => sum + metric.segmentCompleted[segment], 0)])
   ) as Record<TimeSegment, number>;
   const multiDeliverySummary = Object.fromEntries(
-    deliveryTypes.map((type) => [type, metrics.reduce((sum, metric) => sum + metric.deliveryTypeCompleted[type], 0)])
+    deliveryTypes.map((type) => [type, metrics.reduce((sum, metric) => sum + (metric.deliveryTypeCompleted[type] ?? 0), 0)])
   ) as Record<DeliveryType, number>;
   const riderRankings = metrics
     .map((metric) => ({

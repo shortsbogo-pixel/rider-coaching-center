@@ -15,13 +15,33 @@ const riderData = riders as RiderProfile[];
 
 const sheetCandidates = ["오더별 상세내역서", "오더별 상세 내역서", "오더별상세내역서"];
 const timeSegments: TimeSegment[] = ["Breakfast", "Lunch_Peak", "Post_Lunch", "Dinner_Peak", "Post_Dinner"];
-const deliveryTypes: DeliveryType[] = ["단건배달", "멀티배달1", "멀티배달2", "멀티배달3", "멀티배달4"];
+const deliveryTypes: DeliveryType[] = ["단건배달", "멀티배달1", "멀티배달2", "멀티배달3", "멀티배달4", "확인필요"];
 const weekdayNames = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
 type RawRow = Record<string, unknown> & { __rowNumber?: number };
 
 const columnAliases: Record<string, string[]> = {
-  "성함 또는 이름": ["성함 또는 이름", "성함", "이름", "기사명", "라이더명"],
+  "성함 또는 이름": [
+    "성함 또는 이름",
+    "성함",
+    "라이더명",
+    "라이더",
+    "기사명",
+    "기사",
+    "배달파트너명",
+    "배달파트너",
+    "파트너명",
+    "이름",
+    "수행자",
+    "배달원명",
+    "배달원",
+    "riderName",
+    "rider_name",
+    "driverName",
+    "driver_name",
+    "courierName",
+    "courier_name"
+  ],
   픽업지역: ["픽업지역", "픽업 주소", "픽업지"],
   배달지역: ["배달지역", "배달 주소", "도착지", "전달지역"],
   수락시간: ["수락시간", "배달수락일시"],
@@ -29,8 +49,39 @@ const columnAliases: Record<string, string[]> = {
   배달소요시간: ["배달소요시간", "배달소요시간(시:분)", "소요시간"],
   "해당 구간타임": ["해당 구간타임", "피크타임", "구간타임"],
   배달타입: ["배달타입", "배달 유형"],
-  완료건수: ["완료건수", "완료", "총 정산 오더수"]
+  완료건수: [
+    "완료건수",
+    "수행건수",
+    "배달완료",
+    "완료 수",
+    "완료수",
+    "주문수",
+    "처리건수",
+    "건수",
+    "completed",
+    "completedCount",
+    "complete_count",
+    "deliveryCount",
+    "delivery_count",
+    "완료",
+    "총 정산 오더수"
+  ]
 };
+
+const riderIdentifierAliases = [
+  "전화번호",
+  "휴대폰",
+  "연락처",
+  "파트너ID",
+  "기사ID",
+  "라이더ID",
+  "riderId",
+  "rider_id",
+  "driverId",
+  "driver_id",
+  "courierId",
+  "courier_id"
+];
 
 export interface ParsedUpload {
   week: string;
@@ -41,12 +92,36 @@ export interface ParsedUpload {
   missingColumns: string[];
   orders: OrderRecord[];
   issues: ValidationIssue[];
+  summary?: UploadParseSummary;
 }
 
 export interface ValidationIssue {
   rowNumber: number;
-  type: "missing_value" | "invalid_delivery_type" | "invalid_time_segment" | "outlier";
+  type:
+    | "missing_value"
+    | "missing_rider_name_column"
+    | "missing_rider_name"
+    | "invalid_completed_count"
+    | "invalid_delivery_type"
+    | "invalid_time_segment"
+    | "outlier";
   message: string;
+  rawValue?: string;
+}
+
+export interface UploadParseSummary {
+  totalRows: number;
+  parsedRows: number;
+  riderNameDetectedRows: number;
+  riderNameMissingRows: number;
+  deliveryTypeParsedRows: number;
+  deliveryTypeReviewRows: number;
+  numberConversionWarningRows: number;
+  duplicateRiderCount: number;
+  warningRows: number;
+  analysisTargetRiderCount: number;
+  issueCount: number;
+  displayedIssueCount: number;
 }
 
 export interface UploadPreview {
@@ -58,6 +133,7 @@ export interface UploadPreview {
   missingColumns: string[];
   previewRows: OrderRecord[];
   issues: ValidationIssue[];
+  summary: UploadParseSummary;
 }
 
 function safeWeekFileName(week: string) {
@@ -123,10 +199,17 @@ function asDurationMinutes(value: unknown): number {
   return asNumber(value);
 }
 
+function normalizeColumnName(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
 function resolveHeader(row: RawRow, candidates: string[]): string | undefined {
-  const normalizedCandidates = candidates.map((candidate) => candidate.replace(/\s/g, ""));
+  const normalizedCandidates = candidates.map(normalizeColumnName);
   const keys = Object.keys(row).map((key) => key.trim());
-  return keys.find((key) => normalizedCandidates.includes(key.replace(/\s/g, "")));
+  return keys.find((key) => normalizedCandidates.includes(normalizeColumnName(key)));
 }
 
 function getCell(row: RawRow, candidates: string[]) {
@@ -144,11 +227,11 @@ function findOrderSheet(workbook: XLSX.WorkBook) {
 }
 
 function getMissingColumns(columns: string[]) {
-  const normalizedColumns = columns.map((column) => column.replace(/\s/g, ""));
+  const normalizedColumns = columns.map(normalizeColumnName);
   const missing = requiredOrderColumns.filter((column) => {
     if (column === "완료건수") return false;
     const aliases = columnAliases[column] ?? [column];
-    return !aliases.some((alias) => normalizedColumns.includes(alias.replace(/\s/g, "")));
+    return !aliases.some((alias) => normalizedColumns.includes(normalizeColumnName(alias)));
   });
   return missing;
 }
@@ -166,7 +249,7 @@ function findHeaderRowIndex(rows: unknown[][]) {
     const score = requiredOrderColumns.reduce((sum, column) => {
       if (column === "완료건수") return sum;
       const aliases = columnAliases[column] ?? [column];
-      return sum + (aliases.some((alias) => headers.some((header) => header.replace(/\s/g, "") === alias.replace(/\s/g, ""))) ? 1 : 0);
+      return sum + (aliases.some((alias) => headers.some((header) => normalizeColumnName(header) === normalizeColumnName(alias))) ? 1 : 0);
     }, 0);
 
     if (score > bestScore) {
@@ -202,10 +285,43 @@ function normalizeTimeSegment(value: unknown): TimeSegment | undefined {
   return timeSegments.find((segment) => segment === raw);
 }
 
-function normalizeDeliveryType(value: unknown): DeliveryType | undefined {
-  const raw = asString(value).replace(/\s/g, "");
-  if (!raw) return "단건배달";
-  return deliveryTypes.find((type) => type === raw);
+export interface NormalizedDeliveryType {
+  deliveryType: DeliveryType;
+  needsReview: boolean;
+  rawValue: string;
+}
+
+export function normalizeDeliveryType(value: unknown): NormalizedDeliveryType {
+  const rawValue = asString(value);
+  const compact = rawValue.replace(/[\s_-]/g, "").toUpperCase();
+
+  if (!compact || ["-", "N/A", "NA", "없음", "NULL", "UNDEFINED"].includes(compact)) {
+    return { deliveryType: "확인필요", needsReview: true, rawValue };
+  }
+
+  if (["단건", "단건배달", "단일", "SINGLE", "1건", "일반", "일반배달"].includes(compact)) {
+    return { deliveryType: "단건배달", needsReview: false, rawValue };
+  }
+
+  if (compact === "멀티" || compact === "멀티배달" || compact === "MULTI") {
+    return { deliveryType: "멀티배달1", needsReview: false, rawValue };
+  }
+
+  const multiMatch = compact.match(/^(?:멀티배달|멀티|M|MULTI)([1-4])$/);
+  if (multiMatch?.[1]) {
+    return { deliveryType: `멀티배달${multiMatch[1]}` as DeliveryType, needsReview: false, rawValue };
+  }
+
+  if (/^[2-4]$/.test(compact)) {
+    return { deliveryType: `멀티배달${compact}` as DeliveryType, needsReview: false, rawValue };
+  }
+
+  const exact = deliveryTypes.find((type) => type !== "확인필요" && normalizeColumnName(type) === normalizeColumnName(rawValue));
+  if (exact) {
+    return { deliveryType: exact, needsReview: false, rawValue };
+  }
+
+  return { deliveryType: "확인필요", needsReview: true, rawValue };
 }
 
 function normalizeDateString(value: unknown): string {
@@ -221,8 +337,67 @@ function getWeekday(value: unknown): OrderRecord["weekday"] {
   return "월";
 }
 
-function rowToOrder(row: RawRow, week: string, index: number, issues: ValidationIssue[]): OrderRecord | undefined {
+function formatRawValue(value: string) {
+  return value.trim() ? value : "빈 값";
+}
+
+interface RowParseContext {
+  unknownRiderCount: number;
+}
+
+function maskIdentifier(rawValue: string) {
+  const compact = rawValue.replace(/\s/g, "");
+  if (!compact) return "";
+  const suffix = compact.slice(-4);
+  return `식별 라이더 ****${suffix}`;
+}
+
+function resolveRiderName(row: RawRow, rowNumber: number, issues: ValidationIssue[], context: RowParseContext) {
   const riderName = asString(getCell(row, columnAliases["성함 또는 이름"]));
+  if (riderName) {
+    return { riderName, isFallback: false };
+  }
+
+  const identifier = asString(getCell(row, riderIdentifierAliases));
+  if (identifier) {
+    const fallbackName = maskIdentifier(identifier);
+    issues.push({
+      rowNumber,
+      type: "missing_rider_name",
+      rawValue: identifier,
+      message: `라이더명 누락으로 ${fallbackName}로 임시 표시했습니다.`
+    });
+    return { riderName: fallbackName, isFallback: true };
+  }
+
+  context.unknownRiderCount += 1;
+  const fallbackName = `미확인 라이더 #${context.unknownRiderCount}`;
+  issues.push({
+    rowNumber,
+    type: "missing_rider_name",
+    rawValue: "",
+    message: `라이더명 누락으로 ${fallbackName}로 임시 표시했습니다.`
+  });
+  return { riderName: fallbackName, isFallback: true };
+}
+
+function parseCompletedCount(value: unknown, rowNumber: number, issues: ValidationIssue[]) {
+  const raw = asString(value);
+  if (!raw || raw === "-") return 1;
+  const normalized = raw.replace(/,/g, "");
+  const parsed = Number(normalized);
+  if (Number.isFinite(parsed)) return parsed;
+
+  issues.push({
+    rowNumber,
+    type: "invalid_completed_count",
+    rawValue: raw,
+    message: `완료건수 숫자 변환 확인필요: 원본값 "${formatRawValue(raw)}"을 1건으로 처리했습니다.`
+  });
+  return 1;
+}
+
+function rowToOrder(row: RawRow, week: string, index: number, issues: ValidationIssue[], context: RowParseContext): OrderRecord | undefined {
   const pickupArea = asString(getCell(row, columnAliases["픽업지역"]));
   const deliveryArea = asString(getCell(row, columnAliases["배달지역"]));
   const acceptedAtRaw = getCell(row, columnAliases["수락시간"]);
@@ -230,13 +405,14 @@ function rowToOrder(row: RawRow, week: string, index: number, issues: Validation
   const deliveryMinutes = asDurationMinutes(getCell(row, columnAliases["배달소요시간"]));
   const timeSegment = normalizeTimeSegment(getCell(row, columnAliases["해당 구간타임"]));
   const deliveryType = normalizeDeliveryType(getCell(row, columnAliases["배달타입"]));
-  const completedCount = asNumber(getCell(row, columnAliases["완료건수"]), 1);
   const rowNumber = row.__rowNumber ?? index + 2;
 
-  if (!riderName && !pickupArea && !deliveryArea) return undefined;
   if (!pickupArea && !deliveryArea && !acceptedAtRaw && !deliveredAtRaw) return undefined;
 
-  if (!riderName || !pickupArea || !deliveryArea) {
+  const { riderName } = resolveRiderName(row, rowNumber, issues, context);
+  const completedCount = parseCompletedCount(getCell(row, columnAliases["완료건수"]), rowNumber, issues);
+
+  if (!pickupArea || !deliveryArea) {
     issues.push({ rowNumber, type: "missing_value", message: "이름, 픽업지역, 배달지역 중 빈값이 있습니다." });
   }
 
@@ -244,8 +420,13 @@ function rowToOrder(row: RawRow, week: string, index: number, issues: Validation
     issues.push({ rowNumber, type: "invalid_time_segment", message: "해당 구간타임을 Breakfast/Lunch_Peak/Post_Lunch/Dinner_Peak/Post_Dinner 중 하나로 해석할 수 없습니다." });
   }
 
-  if (!deliveryType) {
-    issues.push({ rowNumber, type: "invalid_delivery_type", message: "배달타입을 단건배달 또는 멀티배달1~4 중 하나로 해석할 수 없습니다." });
+  if (deliveryType.needsReview) {
+    issues.push({
+      rowNumber,
+      type: "invalid_delivery_type",
+      rawValue: deliveryType.rawValue,
+      message: `배달타입 확인필요: 원본값 "${formatRawValue(deliveryType.rawValue)}"을 단건/멀티 기준으로 해석하지 못했습니다.`
+    });
   }
 
   if (deliveryMinutes < 0 || deliveryMinutes > 120) {
@@ -263,11 +444,103 @@ function rowToOrder(row: RawRow, week: string, index: number, issues: Validation
     deliveredAt: normalizeDateString(deliveredAtRaw),
     deliveryMinutes,
     timeSegment: timeSegment ?? "Lunch_Peak",
-    deliveryType: deliveryType ?? "단건배달",
+    deliveryType: deliveryType.deliveryType,
     completedCount,
     weekday: getWeekday(acceptedAtRaw),
     rejectionRate: asOptionalRate(getCell(row, ["거절율", "거절률"])),
     ignoredRate: asOptionalRate(getCell(row, ["무시율", "무시률"]))
+  };
+}
+
+function buildColumnIssues(missingColumns: string[]): ValidationIssue[] {
+  if (!missingColumns.includes("성함 또는 이름")) return [];
+  return [
+    {
+      rowNumber: 0,
+      type: "missing_rider_name_column",
+      message: "라이더명 컬럼을 찾지 못했습니다. 엑셀의 컬럼명을 확인해주세요."
+    }
+  ];
+}
+
+function buildParseSummary(rows: RawRow[], orders: OrderRecord[], issues: ValidationIssue[]): UploadParseSummary {
+  const warningRowNumbers = new Set(issues.map((issue) => issue.rowNumber).filter((rowNumber) => rowNumber > 0));
+  const riderNameMissingRows = new Set(issues.filter((issue) => issue.type === "missing_rider_name").map((issue) => issue.rowNumber));
+  const numberConversionWarningRows = new Set(issues.filter((issue) => issue.type === "invalid_completed_count").map((issue) => issue.rowNumber));
+  const baseNameGroups = orders.reduce<Record<string, Set<string>>>((acc, order) => {
+    const key = order.baseName || order.riderName;
+    if (!key) return acc;
+    acc[key] = acc[key] ?? new Set<string>();
+    acc[key].add(order.riderName);
+    return acc;
+  }, {});
+  const analysisTargetRiderKeys = new Set(orders.map((order) => order.baseName || order.riderName).filter(Boolean));
+
+  return {
+    totalRows: rows.length,
+    parsedRows: orders.length,
+    riderNameDetectedRows: Math.max(orders.length - riderNameMissingRows.size, 0),
+    riderNameMissingRows: riderNameMissingRows.size,
+    deliveryTypeParsedRows: orders.filter((order) => order.deliveryType !== "확인필요").length,
+    deliveryTypeReviewRows: orders.filter((order) => order.deliveryType === "확인필요").length,
+    numberConversionWarningRows: numberConversionWarningRows.size,
+    duplicateRiderCount: Object.values(baseNameGroups).filter((names) => names.size > 1).length,
+    warningRows: warningRowNumbers.size,
+    analysisTargetRiderCount: analysisTargetRiderKeys.size,
+    issueCount: issues.length,
+    displayedIssueCount: Math.min(issues.length, 30)
+  };
+}
+
+function normalizeUploadSummary(summary: UploadParseSummary | undefined, upload: ParsedUpload): UploadParseSummary {
+  const warningRowNumbers = new Set(upload.issues.map((issue) => issue.rowNumber).filter((rowNumber) => rowNumber > 0));
+  const riderNameMissingRows = new Set(upload.issues.filter((issue) => issue.type === "missing_rider_name").map((issue) => issue.rowNumber));
+  const numberConversionWarningRows = new Set(upload.issues.filter((issue) => issue.type === "invalid_completed_count").map((issue) => issue.rowNumber));
+
+  return {
+    totalRows: summary?.totalRows ?? upload.orders.length + warningRowNumbers.size,
+    parsedRows: summary?.parsedRows ?? upload.orders.length,
+    riderNameDetectedRows: summary?.riderNameDetectedRows ?? Math.max(upload.orders.length - riderNameMissingRows.size, 0),
+    riderNameMissingRows: summary?.riderNameMissingRows ?? riderNameMissingRows.size,
+    deliveryTypeParsedRows: summary?.deliveryTypeParsedRows ?? upload.orders.filter((order) => order.deliveryType !== "확인필요").length,
+    deliveryTypeReviewRows: summary?.deliveryTypeReviewRows ?? upload.orders.filter((order) => order.deliveryType === "확인필요").length,
+    numberConversionWarningRows: summary?.numberConversionWarningRows ?? numberConversionWarningRows.size,
+    duplicateRiderCount: summary?.duplicateRiderCount ?? 0,
+    warningRows: summary?.warningRows ?? warningRowNumbers.size,
+    analysisTargetRiderCount: summary?.analysisTargetRiderCount ?? new Set(upload.orders.map((order) => order.baseName || order.riderName).filter(Boolean)).size,
+    issueCount: summary?.issueCount ?? upload.issues.length,
+    displayedIssueCount: summary?.displayedIssueCount ?? Math.min(upload.issues.length, 30)
+  };
+}
+
+function getUploadSummary(upload: ParsedUpload): UploadParseSummary {
+  if (upload.summary) return normalizeUploadSummary(upload.summary, upload);
+
+  const warningRowNumbers = new Set(upload.issues.map((issue) => issue.rowNumber).filter((rowNumber) => rowNumber > 0));
+  const riderNameMissingRows = new Set(upload.issues.filter((issue) => issue.type === "missing_rider_name").map((issue) => issue.rowNumber));
+  const numberConversionWarningRows = new Set(upload.issues.filter((issue) => issue.type === "invalid_completed_count").map((issue) => issue.rowNumber));
+  const baseNameGroups = upload.orders.reduce<Record<string, Set<string>>>((acc, order) => {
+    const key = order.baseName || order.riderName;
+    if (!key) return acc;
+    acc[key] = acc[key] ?? new Set<string>();
+    acc[key].add(order.riderName);
+    return acc;
+  }, {});
+  const analysisTargetRiderKeys = new Set(upload.orders.map((order) => order.baseName || order.riderName).filter(Boolean));
+
+  return {
+    totalRows: upload.orders.length + warningRowNumbers.size,
+    parsedRows: upload.orders.length,
+    riderNameDetectedRows: Math.max(upload.orders.length - riderNameMissingRows.size, 0),
+    riderNameMissingRows: riderNameMissingRows.size,
+    deliveryTypeParsedRows: upload.orders.filter((order) => order.deliveryType !== "확인필요").length,
+    deliveryTypeReviewRows: upload.orders.filter((order) => order.deliveryType === "확인필요").length,
+    numberConversionWarningRows: numberConversionWarningRows.size,
+    duplicateRiderCount: Object.values(baseNameGroups).filter((names) => names.size > 1).length,
+    warningRows: warningRowNumbers.size,
+    analysisTargetRiderCount: analysisTargetRiderKeys.size,
+    issueCount: upload.issues.length,
+    displayedIssueCount: Math.min(upload.issues.length, 30)
   };
 }
 
@@ -276,6 +549,7 @@ async function parseWorkbook(filePath: string, week: string, fileName: string): 
   const sheetName = findOrderSheet(workbook);
 
   if (!sheetName) {
+    const issues: ValidationIssue[] = [{ rowNumber: 0, type: "missing_value", message: "오더별 상세내역서 시트를 찾을 수 없습니다." }];
     return {
       week,
       fileName,
@@ -284,16 +558,19 @@ async function parseWorkbook(filePath: string, week: string, fileName: string): 
       columns: [],
       missingColumns: requiredOrderColumns,
       previewRows: [],
-      issues: [{ rowNumber: 0, type: "missing_value", message: "오더별 상세내역서 시트를 찾을 수 없습니다." }]
+      issues,
+      summary: buildParseSummary([], [], issues)
     };
   }
 
   const { rows, columns } = rowsFromSheet(workbook.Sheets[sheetName]);
   const missingColumns = getMissingColumns(columns);
-  const issues: ValidationIssue[] = [];
+  const issues: ValidationIssue[] = [...buildColumnIssues(missingColumns)];
+  const context: RowParseContext = { unknownRiderCount: 0 };
   const orders = rows
-    .map((row, index) => rowToOrder(row, week, index, issues))
+    .map((row, index) => rowToOrder(row, week, index, issues, context))
     .filter((order): order is OrderRecord => Boolean(order));
+  const summary = buildParseSummary(rows, orders, issues);
 
   return {
     week,
@@ -303,7 +580,8 @@ async function parseWorkbook(filePath: string, week: string, fileName: string): 
     columns,
     missingColumns,
     previewRows: orders.slice(0, 10),
-    issues: issues.slice(0, 30)
+    issues: issues.slice(0, 30),
+    summary
   };
 }
 
@@ -314,6 +592,7 @@ export async function getUploadedWeeks() {
       .filter((file) => file.endsWith(".json"))
       .map(async (file) => {
         const parsed = JSON.parse(await readFile(path.join(parsedDir, file), "utf-8")) as ParsedUpload;
+        const summary = getUploadSummary(parsed);
         const existing = await uploadRepository.getByWeek(parsed.week);
         if (!existing) {
           await uploadRepository.save({
@@ -339,7 +618,8 @@ export async function getUploadedWeeks() {
           completedTotal: parsed.orders.reduce((sum, order) => sum + order.completedCount, 0),
           issueCount: parsed.issues.length,
           status: existing?.status ?? "parsed",
-          deletionCandidate: false
+          deletionCandidate: false,
+          summary
         };
       })
   );
@@ -387,9 +667,11 @@ export async function saveUploadedExcel(file: Express.Multer.File | undefined, w
     const workbook = XLSX.readFile(file.path, { cellDates: true });
     const { rows } = rowsFromSheet(workbook.Sheets[preview.sheetName]);
     const issues: ValidationIssue[] = [];
+    const context: RowParseContext = { unknownRiderCount: 0 };
     const orders = rows
-      .map((row, index) => rowToOrder(row, week, index, issues))
+      .map((row, index) => rowToOrder(row, normalizedWeek, index, issues, context))
       .filter((order): order is OrderRecord => Boolean(order));
+    const summary = buildParseSummary(rows, orders, issues);
 
     const parsed: ParsedUpload = {
       week: normalizedWeek,
@@ -399,7 +681,8 @@ export async function saveUploadedExcel(file: Express.Multer.File | undefined, w
       columns: preview.columns,
       missingColumns: [],
       orders,
-      issues
+      issues,
+      summary
     };
 
     await writeFile(parsedPathForWeek(normalizedWeek), JSON.stringify(parsed, null, 2), "utf-8");
@@ -489,13 +772,17 @@ export async function getValidationSummary() {
       missingColumns: upload.missingColumns,
       orderCount: upload.orders.length,
       completedTotal: upload.orders.reduce((sum, order) => sum + order.completedCount, 0),
-      issueCount: upload.issues.length
+      issueCount: upload.issues.length,
+      summary: getUploadSummary(upload)
     })),
     issues,
     riderCandidates,
     counts: {
       unmatched: riderCandidates.length,
       emptyValues: issues.filter((issue) => issue.type === "missing_value").length,
+      nameColumnMissing: issues.filter((issue) => issue.type === "missing_rider_name_column").length,
+      riderNameMissing: issues.filter((issue) => issue.type === "missing_rider_name").length,
+      numberConversionWarnings: issues.filter((issue) => issue.type === "invalid_completed_count").length,
       typeErrors: issues.filter((issue) => issue.type === "invalid_delivery_type").length,
       segmentErrors: issues.filter((issue) => issue.type === "invalid_time_segment").length,
       outliers: issues.filter((issue) => issue.type === "outlier").length

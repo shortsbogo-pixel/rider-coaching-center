@@ -21,6 +21,7 @@ interface RiderDataInsightProps {
   missionHint: string;
   strengths: string[];
   weaknesses: string[];
+  showValidationDetails?: boolean;
 }
 
 const segmentLabels: Record<TimeSegment, string> = {
@@ -69,11 +70,17 @@ function getSegmentStatus(metrics: RiderMetrics, segment: TimeSegment) {
   return "유지";
 }
 
-export function RiderDataInsight({ metrics, weekKey, missionHint, strengths, weaknesses }: RiderDataInsightProps) {
+export function RiderDataInsight({ metrics, weekKey, missionHint, strengths, weaknesses, showValidationDetails = true }: RiderDataInsightProps) {
   const [uploads, setUploads] = useState<ValidationUpload[]>([]);
   const [isLoadingValidation, setIsLoadingValidation] = useState(true);
 
   useEffect(() => {
+    if (!showValidationDetails) {
+      setUploads([]);
+      setIsLoadingValidation(false);
+      return;
+    }
+
     let ignore = false;
     setIsLoadingValidation(true);
 
@@ -92,7 +99,7 @@ export function RiderDataInsight({ metrics, weekKey, missionHint, strengths, wea
     return () => {
       ignore = true;
     };
-  }, [weekKey]);
+  }, [weekKey, showValidationDetails]);
 
   const activeUploads = useMemo(() => uploads.filter((upload) => upload.week === weekKey), [uploads, weekKey]);
   const requiredColumns = getRiderRequiredColumns();
@@ -130,10 +137,12 @@ export function RiderDataInsight({ metrics, weekKey, missionHint, strengths, wea
           <h3>내 운행 인사이트</h3>
           <p>{weekKey || "최신 주차"} 업로드 데이터를 라이더용으로 가공해 보여줍니다.</p>
         </div>
-        <span className={`status-pill ${validationTone}`}>
-          <ShieldCheck size={14} aria-hidden="true" />
-          {validationLabel}
-        </span>
+        {showValidationDetails ? (
+          <span className={`status-pill ${validationTone}`}>
+            <ShieldCheck size={14} aria-hidden="true" />
+            {validationLabel}
+          </span>
+        ) : null}
       </div>
 
       <div className="rider-insight-summary">
@@ -293,41 +302,43 @@ export function RiderDataInsight({ metrics, weekKey, missionHint, strengths, wea
           </div>
         </details>
 
-        <details className="rider-insight-detail">
-          <summary>
-            <span>
-              <CheckCircle2 size={18} aria-hidden="true" />
-              데이터 상태
-            </span>
-            <ChevronDown size={18} aria-hidden="true" />
-          </summary>
-          <div className="rider-insight-body">
-            <div className="rider-data-status-grid">
-              <article>
-                <span>검증 항목</span>
-                <strong>{requiredColumns.length}개</strong>
-              </article>
-              <article>
-                <span>확인 필요</span>
-                <strong>{missingColumns.length}개</strong>
-              </article>
-              <article>
-                <span>검수 이슈</span>
-                <strong>{formatNumber(issueCount)}건</strong>
-              </article>
+        {showValidationDetails ? (
+          <details className="rider-insight-detail">
+            <summary>
+              <span>
+                <CheckCircle2 size={18} aria-hidden="true" />
+                데이터 상태
+              </span>
+              <ChevronDown size={18} aria-hidden="true" />
+            </summary>
+            <div className="rider-insight-body">
+              <div className="rider-data-status-grid">
+                <article>
+                  <span>검증 항목</span>
+                  <strong>{requiredColumns.length}개</strong>
+                </article>
+                <article>
+                  <span>확인 필요</span>
+                  <strong>{missingColumns.length}개</strong>
+                </article>
+                <article>
+                  <span>검수 이슈</span>
+                  <strong>{formatNumber(issueCount)}건</strong>
+                </article>
+              </div>
+              <div className="rider-validation-list">
+                {requiredColumns.map((column) => {
+                  const missing = missingColumns.includes(column);
+                  return (
+                    <span className={missing ? "warning" : "good"} key={column}>
+                      {column} · {missing ? "확인 필요" : "정상"}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
-            <div className="rider-validation-list">
-              {requiredColumns.map((column) => {
-                const missing = missingColumns.includes(column);
-                return (
-                  <span className={missing ? "warning" : "good"} key={column}>
-                    {column} · {missing ? "확인 필요" : "정상"}
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        </details>
+          </details>
+        ) : null}
       </div>
     </section>
   );

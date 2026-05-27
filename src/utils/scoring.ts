@@ -3,7 +3,7 @@ import type { GradeProgress, RiderGrade, RiderMetrics, RiderProfile, RiderRiskLe
 import { buildRiderProfilesFromOrders } from "./riderProfileBuilder";
 
 const segments: TimeSegment[] = ["Breakfast", "Lunch_Peak", "Post_Lunch", "Dinner_Peak", "Post_Dinner"];
-const deliveryTypes: DeliveryType[] = ["단건배달", "멀티배달1", "멀티배달2", "멀티배달3", "멀티배달4"];
+const deliveryTypes: DeliveryType[] = ["단건배달", "멀티배달1", "멀티배달2", "멀티배달3", "멀티배달4", "확인필요"];
 const weekdays = ["월", "화", "수", "목", "금", "토", "일"];
 
 const gradeRules: Array<{ grade: RiderGrade; label: string; min: number }> = [

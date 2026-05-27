@@ -10,7 +10,8 @@ export type DeliveryType =
   | "멀티배달1"
   | "멀티배달2"
   | "멀티배달3"
-  | "멀티배달4";
+  | "멀티배달4"
+  | "확인필요";
 
 export interface OrderRecord {
   id: string;

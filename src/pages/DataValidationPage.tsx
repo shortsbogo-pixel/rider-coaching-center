@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MetricCard } from "../components/common/MetricCard";
 import { SectionHeader } from "../components/common/SectionHeader";
 import { requiredOrderColumns } from "../utils/excelParser";
+import { groupValidationIssues } from "../utils/validationIssueGroups";
 import { getLatestWeekKey, sortWeekKeys } from "../utils/weekSelector";
 
 interface ValidationIssue {
@@ -10,6 +11,22 @@ interface ValidationIssue {
   week: string;
   type: string;
   message: string;
+  rawValue?: string;
+}
+
+interface UploadParseSummary {
+  totalRows: number;
+  parsedRows: number;
+  riderNameDetectedRows: number;
+  riderNameMissingRows: number;
+  deliveryTypeParsedRows: number;
+  deliveryTypeReviewRows: number;
+  numberConversionWarningRows: number;
+  duplicateRiderCount: number;
+  warningRows: number;
+  analysisTargetRiderCount: number;
+  issueCount: number;
+  displayedIssueCount: number;
 }
 
 interface ValidationUpload {
@@ -21,6 +38,7 @@ interface ValidationUpload {
   orderCount: number;
   completedTotal: number;
   issueCount: number;
+  summary?: UploadParseSummary;
 }
 
 interface RiderCandidate {
@@ -40,6 +58,9 @@ interface ValidationSummary {
   counts: {
     unmatched: number;
     emptyValues: number;
+    nameColumnMissing?: number;
+    riderNameMissing?: number;
+    numberConversionWarnings?: number;
     typeErrors: number;
     segmentErrors: number;
     outliers: number;
@@ -53,17 +74,13 @@ const emptySummary: ValidationSummary = {
   counts: {
     unmatched: 0,
     emptyValues: 0,
+    nameColumnMissing: 0,
+    riderNameMissing: 0,
+    numberConversionWarnings: 0,
     typeErrors: 0,
     segmentErrors: 0,
     outliers: 0
   }
-};
-
-const issueLabels: Record<string, string> = {
-  missing_value: "빈값/누락",
-  invalid_delivery_type: "배달타입 오류",
-  invalid_time_segment: "시간대 오류",
-  outlier: "이상치"
 };
 
 function formatNumber(value: number) {
@@ -98,10 +115,63 @@ function uploadStatus(upload?: ValidationUpload) {
 function countIssues(issues: ValidationIssue[]) {
   return {
     emptyValues: issues.filter((issue) => issue.type === "missing_value").length,
+    nameColumnMissing: issues.filter((issue) => issue.type === "missing_rider_name_column").length,
+    riderNameMissing: issues.filter((issue) => issue.type === "missing_rider_name").length,
+    numberConversionWarnings: issues.filter((issue) => issue.type === "invalid_completed_count").length,
     typeErrors: issues.filter((issue) => issue.type === "invalid_delivery_type").length,
     segmentErrors: issues.filter((issue) => issue.type === "invalid_time_segment").length,
     outliers: issues.filter((issue) => issue.type === "outlier").length
   };
+}
+
+function emptyParseSummary(): UploadParseSummary {
+  return {
+    totalRows: 0,
+    parsedRows: 0,
+    riderNameDetectedRows: 0,
+    riderNameMissingRows: 0,
+    deliveryTypeParsedRows: 0,
+    deliveryTypeReviewRows: 0,
+    numberConversionWarningRows: 0,
+    duplicateRiderCount: 0,
+    warningRows: 0,
+    analysisTargetRiderCount: 0,
+    issueCount: 0,
+    displayedIssueCount: 0
+  };
+}
+
+function sumUploadSummaries(uploads: ValidationUpload[]) {
+  return uploads.reduce<UploadParseSummary>((acc, upload) => {
+    const summary = upload.summary ?? {
+      ...emptyParseSummary(),
+      totalRows: upload.orderCount + upload.issueCount,
+      parsedRows: upload.orderCount,
+      riderNameDetectedRows: upload.orderCount,
+      riderNameMissingRows: 0,
+      deliveryTypeParsedRows: upload.orderCount,
+      deliveryTypeReviewRows: 0,
+      numberConversionWarningRows: 0,
+      warningRows: upload.issueCount,
+      issueCount: upload.issueCount,
+      displayedIssueCount: Math.min(upload.issueCount, 30)
+    };
+
+    return {
+      totalRows: acc.totalRows + summary.totalRows,
+      parsedRows: acc.parsedRows + summary.parsedRows,
+      riderNameDetectedRows: acc.riderNameDetectedRows + summary.riderNameDetectedRows,
+      riderNameMissingRows: acc.riderNameMissingRows + (summary.riderNameMissingRows ?? 0),
+      deliveryTypeParsedRows: acc.deliveryTypeParsedRows + (summary.deliveryTypeParsedRows ?? 0),
+      deliveryTypeReviewRows: acc.deliveryTypeReviewRows + summary.deliveryTypeReviewRows,
+      numberConversionWarningRows: acc.numberConversionWarningRows + (summary.numberConversionWarningRows ?? 0),
+      duplicateRiderCount: acc.duplicateRiderCount + summary.duplicateRiderCount,
+      warningRows: acc.warningRows + summary.warningRows,
+      analysisTargetRiderCount: acc.analysisTargetRiderCount + summary.analysisTargetRiderCount,
+      issueCount: acc.issueCount + summary.issueCount,
+      displayedIssueCount: acc.displayedIssueCount + summary.displayedIssueCount
+    };
+  }, emptyParseSummary());
 }
 
 export function DataValidationPage() {
@@ -125,10 +195,12 @@ export function DataValidationPage() {
   const activeUploads = selectedWeek ? summary.uploads.filter((upload) => upload.week === selectedWeek) : [];
   const activeUpload = activeUploads[0];
   const activeIssues = selectedWeek ? summary.issues.filter((issue) => issue.week === selectedWeek) : summary.issues;
+  const activeIssueGroups = groupValidationIssues(activeIssues);
   const activeCandidates = selectedWeek ? summary.riderCandidates.filter((candidate) => candidate.week === selectedWeek) : summary.riderCandidates;
   const activeCounts = countIssues(activeIssues);
   const totalCompleted = activeUploads.reduce((sum, upload) => sum + upload.completedTotal, 0);
-  const totalRows = activeUploads.reduce((sum, upload) => sum + upload.orderCount, 0);
+  const uploadSummary = sumUploadSummaries(activeUploads);
+  const totalRows = uploadSummary.totalRows || activeUploads.reduce((sum, upload) => sum + upload.orderCount, 0);
   const missingColumnCount = activeUploads.reduce((sum, upload) => sum + upload.missingColumns.length, 0);
   const status = uploadStatus(activeUpload);
 
@@ -167,9 +239,20 @@ export function DataValidationPage() {
       </section>
 
       <div className="metric-grid">
-        <MetricCard label="정상 완료건수" value={`${formatNumber(totalCompleted)}건`} caption={selectedWeek || "주차 없음"} tone="good" />
-        <MetricCard label="확인 필요" value={`${formatNumber(activeIssues.length)}건`} caption={`이상치 ${formatNumber(activeCounts.outliers)}건`} tone={activeIssues.length ? "warning" : "default"} />
-        <MetricCard label="신규 후보" value={`${formatNumber(activeCandidates.length)}명`} caption="자동 분석 대상 포함" tone={activeCandidates.length ? "warning" : "default"} />
+        <MetricCard label="총 행 수" value={`${formatNumber(totalRows)}행`} caption={selectedWeek || "주차 없음"} />
+        <MetricCard label="정상 파싱" value={`${formatNumber(uploadSummary.parsedRows)}행`} caption={`${formatNumber(totalCompleted)}건`} tone="good" />
+        <MetricCard label="라이더명 인식" value={`${formatNumber(uploadSummary.riderNameDetectedRows)}행`} caption="실제 이름 기준" tone="good" />
+        <MetricCard label="라이더명 누락" value={`${formatNumber(uploadSummary.riderNameMissingRows)}행`} caption="임시 표시명 부여" tone={uploadSummary.riderNameMissingRows ? "warning" : "default"} />
+        <MetricCard label="배달타입 정상" value={`${formatNumber(uploadSummary.deliveryTypeParsedRows)}행`} caption="단건/멀티 인식" tone="good" />
+        <MetricCard
+          label="배달타입 확인필요"
+          value={`${formatNumber(uploadSummary.deliveryTypeReviewRows)}행`}
+          caption={`그룹 ${formatNumber(activeIssueGroups.length)}개`}
+          tone={uploadSummary.deliveryTypeReviewRows ? "warning" : "default"}
+        />
+        <MetricCard label="숫자 변환 경고" value={`${formatNumber(uploadSummary.numberConversionWarningRows)}행`} caption="완료건수 확인" tone={uploadSummary.numberConversionWarningRows ? "warning" : "default"} />
+        <MetricCard label="분석 대상" value={`${formatNumber(uploadSummary.analysisTargetRiderCount || activeCandidates.length)}명`} caption="실제 라이더 기준" tone="good" />
+        <MetricCard label="중복 라이더" value={`${formatNumber(uploadSummary.duplicateRiderCount)}명`} caption="동일 baseName 변형" tone={uploadSummary.duplicateRiderCount ? "warning" : "default"} />
         <MetricCard label="필수 컬럼 누락" value={`${formatNumber(missingColumnCount)}개`} caption="매핑 기준" tone={missingColumnCount ? "danger" : "good"} />
       </div>
 
@@ -217,19 +300,77 @@ export function DataValidationPage() {
       </section>
 
       <section className="panel validation-summary-panel">
-        <h3>검수 요약</h3>
+        <h3>업로드 결과 요약</h3>
+        <div className="validation-grid">
+          <div>
+            <strong>{formatNumber(totalRows)}</strong>
+            <span>총 행 수</span>
+          </div>
+          <div>
+            <strong>{formatNumber(uploadSummary.parsedRows)}</strong>
+            <span>정상 파싱 행</span>
+          </div>
+          <div>
+            <strong>{formatNumber(uploadSummary.riderNameDetectedRows)}</strong>
+            <span>라이더명 인식</span>
+          </div>
+          <div>
+            <strong>{formatNumber(uploadSummary.riderNameMissingRows)}</strong>
+            <span>라이더명 누락</span>
+          </div>
+          <div>
+            <strong>{formatNumber(uploadSummary.deliveryTypeParsedRows)}</strong>
+            <span>배달타입 정상 인식</span>
+          </div>
+          <div>
+            <strong>{formatNumber(uploadSummary.deliveryTypeReviewRows)}</strong>
+            <span>배달타입 확인필요</span>
+          </div>
+          <div>
+            <strong>{formatNumber(uploadSummary.numberConversionWarningRows)}</strong>
+            <span>숫자 변환 경고</span>
+          </div>
+          <div>
+            <strong>{formatNumber(uploadSummary.duplicateRiderCount)}</strong>
+            <span>중복 라이더</span>
+          </div>
+          <div>
+            <strong>{formatNumber(uploadSummary.warningRows)}</strong>
+            <span>제외/경고 행</span>
+          </div>
+          <div>
+            <strong>{formatNumber(uploadSummary.analysisTargetRiderCount || activeCandidates.length)}</strong>
+            <span>실제 분석 대상</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel validation-summary-panel">
+        <h3>검수 경고 카운트</h3>
         <div className="validation-grid">
           <div>
             <strong>{formatNumber(activeCandidates.length)}</strong>
             <span>신규/미매칭 라이더</span>
           </div>
           <div>
+            <strong>{formatNumber(activeCounts.nameColumnMissing)}</strong>
+            <span>라이더명 컬럼 누락</span>
+          </div>
+          <div>
+            <strong>{formatNumber(activeCounts.riderNameMissing)}</strong>
+            <span>라이더명 누락</span>
+          </div>
+          <div>
             <strong>{formatNumber(activeCounts.emptyValues)}</strong>
             <span>빈값/누락값</span>
           </div>
           <div>
+            <strong>{formatNumber(activeCounts.numberConversionWarnings)}</strong>
+            <span>숫자 변환</span>
+          </div>
+          <div>
             <strong>{formatNumber(activeCounts.typeErrors)}</strong>
-            <span>배달타입 오류</span>
+            <span>배달타입 확인</span>
           </div>
           <div>
             <strong>{formatNumber(activeCounts.segmentErrors)}</strong>
@@ -249,7 +390,7 @@ export function DataValidationPage() {
               </div>
               <div className="list-card-right">
                 <b>{formatNumber(upload.completedTotal ?? upload.orderCount)}건</b>
-                <span>이슈 {formatNumber(upload.issueCount)}건</span>
+                <span>정상 {formatNumber(upload.summary?.parsedRows ?? upload.orderCount)}행 · 이슈 {formatNumber(upload.issueCount)}건</span>
               </div>
             </article>
           ))}
@@ -283,17 +424,29 @@ export function DataValidationPage() {
       {activeIssues.length ? (
         <section className="panel">
           <div className="analysis-title">
-            <h3>이상치 및 오류 목록</h3>
+            <div>
+              <h3>검수 경고 요약</h3>
+              <p>동일 유형 경고는 그룹화했고, 상세보기에서 행 번호와 원본값을 확인할 수 있습니다.</p>
+            </div>
             <ShieldAlert size={22} aria-hidden="true" />
           </div>
           <div className="issue-list">
-            {activeIssues.slice(0, 30).map((issue) => (
-              <article className="issue-card" key={`${issue.week}-${issue.rowNumber}-${issue.message}`}>
-                <span className="status-pill warning">{issueLabels[issue.type] ?? issue.type}</span>
-                <p>
-                  {issue.week} · {issue.rowNumber}행: {issue.message}
-                </p>
-              </article>
+            {activeIssueGroups.map((group) => (
+              <details className="issue-card" key={group.type}>
+                <summary>
+                  <span className="status-pill warning">{group.label}</span>
+                  <strong>{formatNumber(group.count)}건</strong>
+                </summary>
+                <div className="issue-detail-list">
+                  {group.rows.map((row) => (
+                    <p key={`${group.type}-${row.week}-${row.rowNumber}-${row.rawValue ?? row.message}`}>
+                      {row.week} · {row.rowNumber}행
+                      {row.rawValue !== undefined ? ` · 원본값: ${row.rawValue || "빈 값"}` : ""} · {row.message}
+                    </p>
+                  ))}
+                  {group.count > group.rows.length ? <p>상세 행은 상위 {formatNumber(group.rows.length)}개까지만 표시합니다.</p> : null}
+                </div>
+              </details>
             ))}
           </div>
         </section>
@@ -316,7 +469,7 @@ export function DataValidationPage() {
           <div className="analysis-title">
             <div>
               <h3>일부 항목만 표시 중</h3>
-              <p>목록은 화면 확인용으로 상위 30개까지만 표시합니다. 전체 데이터는 업로드 원본과 parsed 데이터 기준으로 유지됩니다.</p>
+              <p>상세 행은 그룹별 상위 30개까지만 표시합니다. 전체 오류 수는 요약 카운트에 반영됩니다.</p>
             </div>
             <AlertCircle size={22} aria-hidden="true" />
           </div>

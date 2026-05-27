@@ -19,6 +19,20 @@ interface UploadPreview {
   missingColumns: string[];
   previewRows: OrderRecord[];
   issues: Array<{ rowNumber: number; message: string }>;
+  summary?: {
+    totalRows: number;
+    parsedRows: number;
+    riderNameDetectedRows: number;
+    riderNameMissingRows: number;
+    deliveryTypeParsedRows: number;
+    deliveryTypeReviewRows: number;
+    numberConversionWarningRows: number;
+    duplicateRiderCount: number;
+    warningRows: number;
+    analysisTargetRiderCount: number;
+    issueCount: number;
+    displayedIssueCount: number;
+  };
 }
 
 function parseWeekLabel(week: string) {
@@ -191,6 +205,50 @@ export function ExcelUploadPage() {
           <p className="preview-meta">
             시트: {preview.sheetName || "없음"} · 상태: {preview.status === "ready" ? "저장 가능" : "확인 필요"}
           </p>
+          {preview.summary ? (
+            <div className="validation-grid">
+              <div>
+                <strong>{preview.summary.totalRows}</strong>
+                <span>총 행 수</span>
+              </div>
+              <div>
+                <strong>{preview.summary.parsedRows}</strong>
+                <span>정상 파싱</span>
+              </div>
+              <div>
+                <strong>{preview.summary.riderNameDetectedRows}</strong>
+                <span>라이더명 인식</span>
+              </div>
+              <div>
+                <strong>{preview.summary.riderNameMissingRows}</strong>
+                <span>라이더명 누락</span>
+              </div>
+              <div>
+                <strong>{preview.summary.deliveryTypeParsedRows}</strong>
+                <span>배달타입 정상</span>
+              </div>
+              <div>
+                <strong>{preview.summary.deliveryTypeReviewRows}</strong>
+                <span>배달타입 확인필요</span>
+              </div>
+              <div>
+                <strong>{preview.summary.numberConversionWarningRows}</strong>
+                <span>숫자 변환 경고</span>
+              </div>
+              <div>
+                <strong>{preview.summary.duplicateRiderCount}</strong>
+                <span>중복 라이더</span>
+              </div>
+              <div>
+                <strong>{preview.summary.warningRows}</strong>
+                <span>제외/경고 행</span>
+              </div>
+              <div>
+                <strong>{preview.summary.analysisTargetRiderCount}</strong>
+                <span>분석 대상</span>
+              </div>
+            </div>
+          ) : null}
           <div className="preview-table">
             {preview.previewRows.map((row) => (
               <article className="list-card" key={row.id}>

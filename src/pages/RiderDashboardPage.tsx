@@ -235,6 +235,7 @@ export function RiderDashboardPage() {
         missionHint={getMissionHint(metrics)}
         strengths={coaching.strengths}
         weaknesses={coaching.weaknesses}
+        showValidationDetails={false}
       />
 
       <section className="hero-card">
