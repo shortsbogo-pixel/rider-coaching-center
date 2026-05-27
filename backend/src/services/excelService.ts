@@ -1,4 +1,4 @@
-import { readdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import XLSX from "xlsx";
 import type { DeliveryType, OrderRecord, TimeSegment } from "../../../src/types/order";
@@ -9,6 +9,7 @@ import { extractBaseName, matchRiderByName } from "../../../src/utils/riderMatch
 import { analysisRepository } from "../repositories/analysisRepository";
 import { riderRepository } from "../repositories/riderRepository";
 import { uploadRepository } from "../repositories/uploadRepository";
+import { operationStorageService } from "./operationStorageService";
 
 const parsedDir = path.join(process.cwd(), "backend", "src", "data", "parsed");
 const riderData = riders as RiderProfile[];
@@ -104,9 +105,25 @@ export interface ValidationIssue {
     | "invalid_completed_count"
     | "invalid_delivery_type"
     | "invalid_time_segment"
+    | "parsed_json_error"
     | "outlier";
   message: string;
   rawValue?: string;
+  fileName?: string;
+  errorType?: string;
+}
+
+export interface ParsedStorageError {
+  fileName: string;
+  week?: string;
+  errorType: "invalid_json" | "invalid_shape" | "read_error";
+}
+
+export interface ParsedStorageStatus {
+  status: "ok" | "needs_reset";
+  message: string;
+  errorCount: number;
+  errors: ParsedStorageError[];
 }
 
 export interface UploadParseSummary {
@@ -142,6 +159,107 @@ function safeWeekFileName(week: string) {
 
 function parsedPathForWeek(week: string) {
   return path.join(parsedDir, safeWeekFileName(week));
+}
+
+async function ensureParsedDir() {
+  await mkdir(parsedDir, { recursive: true });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isParsedUpload(value: unknown): value is ParsedUpload {
+  return (
+    isRecord(value) &&
+    typeof value.week === "string" &&
+    typeof value.fileName === "string" &&
+    typeof value.uploadedAt === "string" &&
+    typeof value.sheetName === "string" &&
+    Array.isArray(value.columns) &&
+    Array.isArray(value.missingColumns) &&
+    Array.isArray(value.orders) &&
+    Array.isArray(value.issues)
+  );
+}
+
+function getWeekFromParsedFile(fileName: string) {
+  return path.basename(fileName, ".json");
+}
+
+function buildParsedStorageStatus(errors: ParsedStorageError[]): ParsedStorageStatus {
+  return {
+    status: errors.length ? "needs_reset" : "ok",
+    message: errors.length
+      ? "기존 parsed 데이터가 손상되었거나 이전 파서 기준입니다. parsed 데이터를 초기화한 뒤 엑셀을 다시 업로드하세요."
+      : "parsed 데이터가 정상입니다.",
+    errorCount: errors.length,
+    errors: errors.slice(0, 30)
+  };
+}
+
+function buildParsedStorageIssue(error: ParsedStorageError): ValidationIssue & { week: string } {
+  return {
+    rowNumber: 0,
+    week: error.week ?? getWeekFromParsedFile(error.fileName),
+    type: "parsed_json_error",
+    message: "기존 parsed 데이터가 손상되었거나 이전 파서 기준입니다. parsed 데이터를 초기화한 뒤 엑셀을 다시 업로드하세요.",
+    rawValue: error.fileName,
+    fileName: error.fileName,
+    errorType: error.errorType
+  };
+}
+
+async function readParsedUploadFile(fileName: string): Promise<{ upload?: ParsedUpload; error?: ParsedStorageError }> {
+  const filePath = path.join(parsedDir, fileName);
+  try {
+    const parsed = JSON.parse(await readFile(filePath, "utf-8")) as unknown;
+    if (!isParsedUpload(parsed)) {
+      return {
+        error: {
+          fileName,
+          week: isRecord(parsed) && typeof parsed.week === "string" ? parsed.week : getWeekFromParsedFile(fileName),
+          errorType: "invalid_shape"
+        }
+      };
+    }
+    return { upload: parsed };
+  } catch (error) {
+    return {
+      error: {
+        fileName,
+        week: getWeekFromParsedFile(fileName),
+        errorType: error instanceof SyntaxError ? "invalid_json" : "read_error"
+      }
+    };
+  }
+}
+
+async function readParsedUploads() {
+  await ensureParsedDir();
+  const files = await readdir(parsedDir);
+  const results = await Promise.all(files.filter((file) => file.endsWith(".json")).map((file) => readParsedUploadFile(file)));
+  return {
+    uploads: results.flatMap((result) => (result.upload ? [result.upload] : [])),
+    errors: results.flatMap((result) => (result.error ? [result.error] : []))
+  };
+}
+
+async function writeParsedUploadSafe(week: string, parsed: ParsedUpload) {
+  await ensureParsedDir();
+  const targetPath = parsedPathForWeek(week);
+  const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    const serialized = `${JSON.stringify(parsed, null, 2)}\n`;
+    JSON.parse(serialized);
+    await writeFile(tempPath, serialized, "utf-8");
+    JSON.parse(await readFile(tempPath, "utf-8"));
+    await unlink(targetPath).catch(() => undefined);
+    await rename(tempPath, targetPath);
+  } catch (error) {
+    await unlink(tempPath).catch(() => undefined);
+    throw new Error("parsed 저장 실패: 저장된 JSON을 검증하지 못했습니다.");
+  }
 }
 
 function decodeFileName(fileName: string) {
@@ -586,42 +704,39 @@ async function parseWorkbook(filePath: string, week: string, fileName: string): 
 }
 
 export async function getUploadedWeeks() {
-  const files = await readdir(parsedDir);
+  const { uploads } = await readParsedUploads();
   const parsedUploads = await Promise.all(
-    files
-      .filter((file) => file.endsWith(".json"))
-      .map(async (file) => {
-        const parsed = JSON.parse(await readFile(path.join(parsedDir, file), "utf-8")) as ParsedUpload;
-        const summary = getUploadSummary(parsed);
-        const existing = await uploadRepository.getByWeek(parsed.week);
-        if (!existing) {
-          await uploadRepository.save({
-            id: parsed.week,
-            weekKey: parsed.week,
-            fileName: parsed.fileName,
-            uploadedAt: parsed.uploadedAt,
-            uploadedBy: "admin",
-            totalRows: parsed.orders.length + parsed.issues.length,
-            validRows: parsed.orders.length,
-            invalidRows: parsed.issues.length,
-            detectedSheets: [parsed.sheetName].filter(Boolean),
-            status: "parsed",
-            fileSignature: `${parsed.fileName}:${parsed.orders.length}:${parsed.uploadedAt}`
-          });
-        }
-        return {
-          week: parsed.week,
+    uploads.map(async (parsed) => {
+      const summary = getUploadSummary(parsed);
+      const existing = await uploadRepository.getByWeek(parsed.week);
+      if (!existing) {
+        await uploadRepository.save({
+          id: parsed.week,
           weekKey: parsed.week,
           fileName: parsed.fileName,
           uploadedAt: parsed.uploadedAt,
-          orderCount: parsed.orders.length,
-          completedTotal: parsed.orders.reduce((sum, order) => sum + order.completedCount, 0),
-          issueCount: parsed.issues.length,
-          status: existing?.status ?? "parsed",
-          deletionCandidate: false,
-          summary
-        };
-      })
+          uploadedBy: "admin",
+          totalRows: parsed.orders.length + parsed.issues.length,
+          validRows: parsed.orders.length,
+          invalidRows: parsed.issues.length,
+          detectedSheets: [parsed.sheetName].filter(Boolean),
+          status: "parsed",
+          fileSignature: `${parsed.fileName}:${parsed.orders.length}:${parsed.uploadedAt}`
+        });
+      }
+      return {
+        week: parsed.week,
+        weekKey: parsed.week,
+        fileName: parsed.fileName,
+        uploadedAt: parsed.uploadedAt,
+        orderCount: parsed.orders.length,
+        completedTotal: parsed.orders.reduce((sum, order) => sum + order.completedCount, 0),
+        issueCount: parsed.issues.length,
+        status: existing?.status ?? "parsed",
+        deletionCandidate: false,
+        summary
+      };
+    })
   );
   const candidates = await uploadRepository.markDeletionCandidates(8);
   const candidateWeeks = new Set(candidates.filter((item) => item.deletionCandidate).map((item) => item.weekKey));
@@ -685,7 +800,7 @@ export async function saveUploadedExcel(file: Express.Multer.File | undefined, w
       summary
     };
 
-    await writeFile(parsedPathForWeek(normalizedWeek), JSON.stringify(parsed, null, 2), "utf-8");
+    await writeParsedUploadSafe(normalizedWeek, parsed);
     await uploadRepository.save({
       id: normalizedWeek,
       weekKey: normalizedWeek,
@@ -709,23 +824,17 @@ export async function saveUploadedExcel(file: Express.Multer.File | undefined, w
 }
 
 export async function loadParsedOrders() {
-  const files = await readdir(parsedDir);
-  const uploads = await Promise.all(
-    files
-      .filter((file) => file.endsWith(".json"))
-      .map(async (file) => JSON.parse(await readFile(path.join(parsedDir, file), "utf-8")) as ParsedUpload)
-  );
+  const { uploads } = await readParsedUploads();
   return uploads.flatMap((upload) => upload.orders);
 }
 
 export async function getValidationSummary() {
-  const files = await readdir(parsedDir);
-  const uploads = await Promise.all(
-    files
-      .filter((file) => file.endsWith(".json"))
-      .map(async (file) => JSON.parse(await readFile(path.join(parsedDir, file), "utf-8")) as ParsedUpload)
-  );
-  const issues = uploads.flatMap((upload) => upload.issues.map((issue) => ({ ...issue, week: upload.week })));
+  const { uploads, errors } = await readParsedUploads();
+  const parsedStorage = buildParsedStorageStatus(errors);
+  const issues = [
+    ...errors.map(buildParsedStorageIssue),
+    ...uploads.flatMap((upload) => upload.issues.map((issue) => ({ ...issue, week: upload.week })))
+  ];
   const riderCandidates = Object.values(
     uploads
       .flatMap((upload) =>
@@ -776,6 +885,7 @@ export async function getValidationSummary() {
       summary: getUploadSummary(upload)
     })),
     issues,
+    parsedStorage,
     riderCandidates,
     counts: {
       unmatched: riderCandidates.length,
@@ -787,5 +897,30 @@ export async function getValidationSummary() {
       segmentErrors: issues.filter((issue) => issue.type === "invalid_time_segment").length,
       outliers: issues.filter((issue) => issue.type === "outlier").length
     }
+  };
+}
+
+export async function resetParsedUploads() {
+  await ensureParsedDir();
+  const files = (await readdir(parsedDir)).filter((file) => file.endsWith(".json"));
+  await Promise.all(files.map((file) => unlink(path.join(parsedDir, file))));
+  await Promise.all([analysisRepository.clear(), riderRepository.clear()]);
+
+  const createdAt = new Date().toISOString();
+  await operationStorageService.operationLogs
+    .save({
+      id: `parsed-reset::${createdAt}`,
+      actionType: "PARSED_DATA_RESET",
+      actorRole: "admin",
+      actorName: "admin",
+      summary: `parsed 데이터 초기화: ${files.length}개 파일 삭제`,
+      createdAt
+    })
+    .catch(() => undefined);
+
+  return {
+    deletedCount: files.length,
+    deletedFiles: files.sort((a, b) => a.localeCompare(b, "ko")),
+    message: "기존 parsed 데이터가 초기화되었습니다. 엑셀을 다시 업로드해주세요."
   };
 }

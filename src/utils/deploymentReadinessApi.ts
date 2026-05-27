@@ -6,6 +6,13 @@ type ApiEnv = {
 
 export type DeploymentHealthStatus = "ok" | "warning" | "fail";
 
+export class HealthAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "HealthAuthError";
+  }
+}
+
 export interface DeploymentHealthReport {
   success: boolean;
   status: DeploymentHealthStatus;
@@ -70,6 +77,9 @@ export async function fetchFullHealthReport() {
     headers: getAuthHeader()
   });
   const payload = (await response.json()) as DeploymentHealthReport | { message?: string };
+  if (response.status === 403) {
+    throw new HealthAuthError("message" in payload && payload.message ? payload.message : "관리자 권한이 필요합니다.");
+  }
   if (!response.ok || !("success" in payload) || !payload.success) {
     throw new Error("message" in payload && payload.message ? payload.message : "health check failed");
   }

@@ -25,6 +25,7 @@ const issueGroupLabels: Record<string, string> = {
   invalid_completed_count: "숫자 변환 확인필요",
   invalid_delivery_type: "배달타입 확인필요",
   invalid_time_segment: "시간대 확인필요",
+  parsed_json_error: "JSON 파싱 오류",
   outlier: "이상치"
 };
 

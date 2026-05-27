@@ -36,7 +36,7 @@ const filterOptions: Array<{ value: OperationLogFilter; label: string; actionTyp
     ]
   },
   { value: "report", label: "리포트", actionTypes: ["MONTHLY_REPORT_GENERATED"] },
-  { value: "backup", label: "백업/복원", actionTypes: ["BACKUP_DOWNLOADED", "DATA_RESTORED", "CSV_EXPORTED", "LOCAL_DATA_MIGRATED"] }
+  { value: "backup", label: "백업/복원", actionTypes: ["BACKUP_DOWNLOADED", "DATA_RESTORED", "CSV_EXPORTED", "LOCAL_DATA_MIGRATED", "PARSED_DATA_RESET"] }
 ];
 
 function formatDateTime(value: string) {
@@ -61,6 +61,7 @@ function actionLabel(actionType: string) {
     CSV_EXPORTED: "CSV 내보내기",
     AI_STATUS_CHECKED: "AI 상태 점검",
     LOCAL_DATA_MIGRATED: "로컬 데이터 이전",
+    PARSED_DATA_RESET: "parsed 데이터 초기화",
     MESSAGE_QUEUE_ADDED: "발송 대기함 추가",
     MESSAGE_QUEUE_KAKAO_COPIED: "카톡 문구 복사",
     MESSAGE_QUEUE_SMS_COPIED: "문자 문구 복사",

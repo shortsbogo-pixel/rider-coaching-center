@@ -54,3 +54,17 @@
 3. 배달타입 `확인필요`가 많으면 원본 배달타입 컬럼의 실제 값을 확인합니다.
 4. 저장 후 `/admin`, `/validation`, `/analysis`, `/rider`를 확인합니다.
 5. `/rider`에는 업로드 오류 상세, 운영 로그, 발송 대기함, provider/fallbackReason이 표시되지 않아야 합니다.
+
+## 15차-1.5 parsed JSON 복구 절차
+
+15차-1 파서 안정화 이후 기존 `backend/src/data/parsed` 데이터는 재생성이 필요할 수 있습니다. 배포본에서 `Unexpected non-whitespace character after JSON` 같은 JSON parse 오류가 보이면 기존 저장 데이터가 손상되었거나 구버전 parsed 결과일 가능성이 큽니다.
+
+조치 순서:
+
+1. `/validation`에서 `parsed 데이터 관리` 패널을 확인합니다.
+2. `JSON 파싱 오류 N건 / 재파싱 필요`가 표시되면 상세보기에서 파일명, 주차, 오류 유형만 확인합니다.
+3. `기존 parsed 데이터 초기화`를 눌러 parsed 결과 파일만 초기화합니다. 원본 업로드 임시 파일이나 운영 로그/메모/발송 대기함은 초기화 대상이 아닙니다.
+4. 초기화 후 최신 쿠팡이츠 주차별 상세 엑셀을 `/upload`에서 다시 업로드합니다.
+5. `/validation`, `/admin`, `/analysis`, `/rider` 순서로 표시 상태를 확인합니다.
+
+베타 테스트 전에는 반드시 최신 엑셀을 다시 업로드해 새 파서 기준의 parsed JSON을 생성하세요. `/rider` 화면에는 parsed 오류 상세나 관리자 내부 검수 정보가 노출되지 않아야 합니다.

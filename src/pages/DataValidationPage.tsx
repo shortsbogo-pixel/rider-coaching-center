@@ -2,6 +2,7 @@ import { AlertCircle, ArrowRight, CheckCircle2, FileSearch, ShieldAlert, UsersRo
 import { useEffect, useMemo, useState } from "react";
 import { MetricCard } from "../components/common/MetricCard";
 import { SectionHeader } from "../components/common/SectionHeader";
+import { getAuthHeader } from "../utils/authStore";
 import { requiredOrderColumns } from "../utils/excelParser";
 import { groupValidationIssues } from "../utils/validationIssueGroups";
 import { getLatestWeekKey, sortWeekKeys } from "../utils/weekSelector";
@@ -12,6 +13,8 @@ interface ValidationIssue {
   type: string;
   message: string;
   rawValue?: string;
+  fileName?: string;
+  errorType?: string;
 }
 
 interface UploadParseSummary {
@@ -41,6 +44,17 @@ interface ValidationUpload {
   summary?: UploadParseSummary;
 }
 
+interface ParsedStorageStatus {
+  status: "ok" | "needs_reset";
+  message: string;
+  errorCount: number;
+  errors: Array<{
+    fileName: string;
+    week?: string;
+    errorType: string;
+  }>;
+}
+
 interface RiderCandidate {
   week: string;
   riderName: string;
@@ -54,6 +68,7 @@ interface RiderCandidate {
 interface ValidationSummary {
   uploads: ValidationUpload[];
   issues: ValidationIssue[];
+  parsedStorage?: ParsedStorageStatus;
   riderCandidates: RiderCandidate[];
   counts: {
     unmatched: number;
@@ -70,6 +85,12 @@ interface ValidationSummary {
 const emptySummary: ValidationSummary = {
   uploads: [],
   issues: [],
+  parsedStorage: {
+    status: "ok",
+    message: "parsed 데이터가 정상입니다.",
+    errorCount: 0,
+    errors: []
+  },
   riderCandidates: [],
   counts: {
     unmatched: 0,
@@ -177,9 +198,11 @@ function sumUploadSummaries(uploads: ValidationUpload[]) {
 export function DataValidationPage() {
   const [summary, setSummary] = useState<ValidationSummary>(emptySummary);
   const [activeWeek, setActiveWeek] = useState("");
+  const [isResettingParsed, setIsResettingParsed] = useState(false);
+  const [parsedResetMessage, setParsedResetMessage] = useState("");
 
-  useEffect(() => {
-    fetch("/api/uploads/validation")
+  async function loadValidationSummary() {
+    return fetch("/api/uploads/validation")
       .then((response) => response.json())
       .then((data) => {
         const nextSummary = data as ValidationSummary;
@@ -187,7 +210,34 @@ export function DataValidationPage() {
         setActiveWeek((current) => current || getLatestWeekKey(nextSummary.uploads.map((upload) => upload.week)));
       })
       .catch(() => setSummary(emptySummary));
+  }
+
+  useEffect(() => {
+    void loadValidationSummary();
   }, []);
+
+  async function handleResetParsedData() {
+    const confirmed = window.confirm("기존 parsed 데이터만 초기화합니다. 원본 업로드 파일은 삭제하지 않습니다. 계속할까요?");
+    if (!confirmed) return;
+
+    setIsResettingParsed(true);
+    setParsedResetMessage("");
+    try {
+      const response = await fetch("/api/uploads/parsed/reset", {
+        method: "POST",
+        headers: getAuthHeader()
+      });
+      const result = (await response.json().catch(() => ({}))) as { message?: string };
+      if (!response.ok) throw new Error(result.message ?? "parsed 데이터를 초기화하지 못했습니다.");
+      setParsedResetMessage(result.message ?? "기존 parsed 데이터가 초기화되었습니다. 엑셀을 다시 업로드해주세요.");
+      await loadValidationSummary();
+      setActiveWeek("");
+    } catch (error) {
+      setParsedResetMessage(error instanceof Error ? error.message : "parsed 데이터를 초기화하지 못했습니다.");
+    } finally {
+      setIsResettingParsed(false);
+    }
+  }
 
   const weekOptions = useMemo(() => sortWeekKeys(summary.uploads.map((upload) => upload.week)), [summary.uploads]);
   const hasUploads = summary.uploads.length > 0;
@@ -203,6 +253,7 @@ export function DataValidationPage() {
   const totalRows = uploadSummary.totalRows || activeUploads.reduce((sum, upload) => sum + upload.orderCount, 0);
   const missingColumnCount = activeUploads.reduce((sum, upload) => sum + upload.missingColumns.length, 0);
   const status = uploadStatus(activeUpload);
+  const parsedStorage = summary.parsedStorage ?? emptySummary.parsedStorage!;
 
   return (
     <div className="page-stack validation-page">
@@ -235,6 +286,48 @@ export function DataValidationPage() {
             <span>{activeUpload.sheetName}</span>
             <span>총 {formatNumber(totalRows)}행</span>
           </div>
+        ) : null}
+      </section>
+
+      <section className="panel validation-action-panel">
+        <div className="analysis-title">
+          <div>
+            <p className="eyebrow">parsed 데이터 관리</p>
+            <h3>{parsedStorage.errorCount ? `JSON 파싱 오류 ${formatNumber(parsedStorage.errorCount)}건 / 재파싱 필요` : "재업로드 안내"}</h3>
+            <p>
+              {parsedStorage.errorCount
+                ? parsedStorage.message
+                : "15차-1 파서 안정화 이후 기존 주차 데이터는 재업로드가 필요할 수 있습니다. 분석 결과가 어색하면 초기화 후 엑셀을 다시 업로드하세요."}
+            </p>
+          </div>
+          <ShieldAlert size={22} aria-hidden="true" />
+        </div>
+        <div className="button-row data-button-row">
+          <button className="secondary-link-button icon-button" type="button" onClick={handleResetParsedData} disabled={isResettingParsed}>
+            기존 parsed 데이터 초기화
+          </button>
+          <a className="secondary-link-button icon-button" href="/upload">
+            엑셀 재업로드 <ArrowRight size={16} aria-hidden="true" />
+          </a>
+        </div>
+        {parsedResetMessage ? <p className="empty-state">{parsedResetMessage}</p> : null}
+        {parsedStorage.errorCount ? (
+          <details className="issue-card">
+            <summary>
+              <span className="status-pill warning">상세보기</span>
+              <strong>상위 {formatNumber(parsedStorage.errors.length)}건</strong>
+            </summary>
+            <div className="issue-detail-list">
+              {parsedStorage.errors.map((error) => (
+                <p key={`${error.fileName}-${error.errorType}`}>
+                  {error.week ?? "-"} · {error.fileName} · {error.errorType}
+                </p>
+              ))}
+              {parsedStorage.errorCount > parsedStorage.errors.length ? (
+                <p>상세 목록은 상위 {formatNumber(parsedStorage.errors.length)}개까지만 표시합니다.</p>
+              ) : null}
+            </div>
+          </details>
         ) : null}
       </section>
 

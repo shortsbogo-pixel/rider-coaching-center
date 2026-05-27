@@ -17,3 +17,15 @@ test("groups validation issues by type and message with row details", () => {
   assert.equal(groups[1]?.type, "invalid_completed_count");
   assert.equal(groups[1]?.count, 1);
 });
+
+test("groups parsed JSON errors under an admin-friendly summary label", () => {
+  const groups = groupValidationIssues([
+    { week: "5월2주차", rowNumber: 0, type: "parsed_json_error", message: "parsed 데이터 초기화 필요", rawValue: "5월2주차.json" },
+    { week: "5월3주차", rowNumber: 0, type: "parsed_json_error", message: "parsed 데이터 초기화 필요", rawValue: "5월3주차.json" }
+  ]);
+
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0]?.type, "parsed_json_error");
+  assert.equal(groups[0]?.label, "JSON 파싱 오류");
+  assert.equal(groups[0]?.count, 2);
+});
