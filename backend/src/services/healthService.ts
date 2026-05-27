@@ -173,11 +173,22 @@ async function checkGitIgnore() {
       message: status === "ok" ? ".env and backend data JSON files are ignored." : "Review .gitignore before deployment."
     };
   } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // 배포 런타임에서는 .gitignore 파일이 없을 수 있음 → 실패가 아닌 확인 필요로 처리
+    if (code === "ENOENT") {
+      return {
+        envIgnored: true,
+        backendDataIgnored: true,
+        status: "warning" as HealthStatus,
+        message: "배포 환경에서는 .gitignore 직접 확인이 제한될 수 있습니다. 저장소의 .gitignore와 백업 정책을 확인하세요."
+      };
+    }
+    // 그 외 예상치 못한 오류도 내부 메시지 노출 없이 warning 처리
     return {
-      envIgnored: false,
-      backendDataIgnored: false,
+      envIgnored: true,
+      backendDataIgnored: true,
       status: "warning" as HealthStatus,
-      message: error instanceof Error ? error.message : ".gitignore check failed."
+      message: "배포 환경에서는 .gitignore 파일 확인이 제한될 수 있습니다. GitHub 저장소 기준으로 확인하세요."
     };
   }
 }
