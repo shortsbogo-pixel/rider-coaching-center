@@ -1361,7 +1361,9 @@ input {
     width: 100%;
   }
   .operation-status-grid,
-  .operation-check-grid {
+  .operation-check-grid,
+  .ai-history-management-grid,
+  .ai-history-cleanup-actions {
     grid-template-columns: 1fr;
   }
 }
@@ -1497,6 +1499,86 @@ input {
 
 .history-error {
   color: #a12b1f;
+}
+
+.ai-history-management-panel {
+  margin: 14px 0;
+}
+
+.ai-history-management-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.ai-history-management-grid article {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #dfe6f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fbff;
+}
+
+.ai-history-management-grid article.warning {
+  border-color: #f4d184;
+  background: #fffaf0;
+}
+
+.ai-history-management-grid span,
+.ai-history-cleanup-actions label,
+.ai-history-danger-zone p {
+  color: #405166;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ai-history-management-grid strong {
+  color: #17324d;
+  font-size: 18px;
+}
+
+.ai-history-cleanup-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+  margin-top: 12px;
+}
+
+.ai-history-cleanup-actions label {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-history-cleanup-actions select,
+.ai-history-cleanup-actions input {
+  min-height: 38px;
+  border: 1px solid #d8e1ec;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #17324d;
+  font: inherit;
+}
+
+.ai-history-danger-zone {
+  margin-top: 12px;
+  border: 1px solid #f1d1d0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff7f6;
+}
+
+.ai-history-danger-zone summary {
+  cursor: pointer;
+  color: #a12b1f;
+  font-weight: 900;
+}
+
+.ai-history-danger-zone button {
+  margin-top: 8px;
+  margin-right: 8px;
 }
 
 .copy-button {
