@@ -1,5 +1,10 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
+import {
+  cleanupAICoachingHistory,
+  getAICoachingHistoryCleanupSummary,
+  type AICoachingHistoryCleanupCriteria
+} from "../services/aiCoachingHistoryCleanupService";
 import { operationStorageService } from "../services/operationStorageService";
 import type { OperationLogEntry, OperationStoredItem } from "../types/operationData";
 
@@ -96,6 +101,43 @@ router.get("/ai-coaching-history", async (_req, res) => {
 });
 
 router.post("/ai-coaching-history", postCollection(operationStorageService.aiCoachingHistory, "ai-history"));
+
+router.get("/ai-coaching-history/cleanup-summary", async (_req, res) => {
+  try {
+    ok(res, await getAICoachingHistoryCleanupSummary());
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+function parseCleanupCriteria(body: unknown): AICoachingHistoryCleanupCriteria {
+  if (!isRecord(body)) throw new Error("cleanup scope is required");
+  const scope = typeof body.scope === "string" ? body.scope : "";
+  if (scope === "uploaded") return { scope };
+  if (scope === "week") {
+    const weekKey = typeof body.weekKey === "string" ? body.weekKey.trim() : "";
+    if (!weekKey) throw new Error("weekKey is required");
+    return { scope, weekKey };
+  }
+  if (scope === "rider") {
+    const riderName = typeof body.riderName === "string" ? body.riderName.trim() : "";
+    if (!riderName) throw new Error("riderName is required");
+    return { scope, riderName };
+  }
+  if (scope === "all") {
+    if (body.backupAcknowledged !== true) throw new Error("backup download 안내 확인이 필요합니다.");
+    return { scope };
+  }
+  throw new Error("unsupported cleanup scope");
+}
+
+router.post("/ai-coaching-history/cleanup", async (req, res) => {
+  try {
+    ok(res, await cleanupAICoachingHistory(parseCleanupCriteria(req.body)), "cleaned");
+  } catch (error) {
+    fail(res, error);
+  }
+});
 
 router.get("/ai-coaching-history/week/:weekKey", async (req, res) => {
   try {

@@ -37,13 +37,14 @@ async function writeArray<T>(filePath: string, items: T[]) {
 }
 
 export function createJsonRepository<T extends { id: string }>(fileName: string): Repository<T> {
-  const filePath = dataPath(fileName);
   return {
-    getAll: () => readArray<T>(filePath),
+    getAll: () => readArray<T>(dataPath(fileName)),
     async getById(id) {
+      const filePath = dataPath(fileName);
       return (await readArray<T>(filePath)).find((item) => item.id === id);
     },
     async save(item) {
+      const filePath = dataPath(fileName);
       const items = await readArray<T>(filePath);
       await writeArray(
         filePath,
@@ -52,6 +53,7 @@ export function createJsonRepository<T extends { id: string }>(fileName: string)
       return item;
     },
     async saveMany(items) {
+      const filePath = dataPath(fileName);
       const current = await readArray<T>(filePath);
       const next = current.filter((item) => !items.some((incoming) => incoming.id === item.id));
       next.push(...items);
@@ -59,6 +61,7 @@ export function createJsonRepository<T extends { id: string }>(fileName: string)
       return items;
     },
     async remove(id) {
+      const filePath = dataPath(fileName);
       const items = await readArray<T>(filePath);
       await writeArray(
         filePath,
@@ -66,11 +69,11 @@ export function createJsonRepository<T extends { id: string }>(fileName: string)
       );
     },
     async clear() {
-      await writeArray(filePath, []);
+      await writeArray(dataPath(fileName), []);
     },
-    exportData: () => readArray<T>(filePath),
+    exportData: () => readArray<T>(dataPath(fileName)),
     async importData(items) {
-      await writeArray(filePath, items);
+      await writeArray(dataPath(fileName), items);
       return items;
     }
   };

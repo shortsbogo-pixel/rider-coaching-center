@@ -262,6 +262,10 @@ async function writeParsedUploadSafe(week: string, parsed: ParsedUpload) {
   }
 }
 
+async function clearAnalysisCaches() {
+  await Promise.all([analysisRepository.clear(), riderRepository.clear()]);
+}
+
 function decodeFileName(fileName: string) {
   const decoded = Buffer.from(fileName, "latin1").toString("utf8");
   return decoded.includes("�") ? fileName : decoded;
@@ -904,7 +908,7 @@ export async function resetParsedUploads() {
   await ensureParsedDir();
   const files = (await readdir(parsedDir)).filter((file) => file.endsWith(".json"));
   await Promise.all(files.map((file) => unlink(path.join(parsedDir, file))));
-  await Promise.all([analysisRepository.clear(), riderRepository.clear()]);
+  await clearAnalysisCaches();
 
   const createdAt = new Date().toISOString();
   await operationStorageService.operationLogs
@@ -921,6 +925,32 @@ export async function resetParsedUploads() {
   return {
     deletedCount: files.length,
     deletedFiles: files.sort((a, b) => a.localeCompare(b, "ko")),
+    analysisCachesCleared: true,
+    aiHistoryPreserved: true,
+    requiresReupload: true,
     message: "기존 parsed 데이터가 초기화되었습니다. 엑셀을 다시 업로드해주세요."
+  };
+}
+
+export async function resetAnalysisCaches() {
+  await clearAnalysisCaches();
+
+  const createdAt = new Date().toISOString();
+  await operationStorageService.operationLogs
+    .save({
+      id: `analysis-cache-reset::${createdAt}`,
+      actionType: "ANALYSIS_CACHE_RESET",
+      actorRole: "admin",
+      actorName: "admin",
+      summary: "분석 캐시 초기화: AI 코칭 이력은 유지",
+      createdAt
+    })
+    .catch(() => undefined);
+
+  return {
+    analysisCachesCleared: true,
+    aiHistoryPreserved: true,
+    requiresReupload: false,
+    message: "분석 캐시가 초기화되었습니다. AI 코칭 이력은 유지했습니다."
   };
 }

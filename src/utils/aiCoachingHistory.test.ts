@@ -5,6 +5,7 @@ import {
   createAICoachingHistoryEntry,
   getAICoachingHistoryForRiderWeek,
   readAICoachingHistoryEntries,
+  removeAICoachingHistoryEntries,
   saveAICoachingHistoryEntry
 } from "./aiCoachingHistory";
 
@@ -68,4 +69,21 @@ test("AI coaching history storage failures do not throw", () => {
 
   assert.doesNotThrow(() => saveAICoachingHistoryEntry(createEntry(), storage));
   assert.equal(saveAICoachingHistoryEntry(createEntry(), storage), false);
+});
+
+test("AI coaching history cleanup removes only matching local entries", () => {
+  const storage = new MemoryStorage();
+  const normal = createEntry({ riderName: "김라이더", weekKey: "5월3주차", createdAt: "2026-05-26T01:00:00.000Z" });
+  const uploaded = createEntry({ riderName: "uploaded-박종관", weekKey: "5월3주차", createdAt: "2026-05-26T02:00:00.000Z" });
+  const otherWeek = createEntry({ riderName: "박라이더", weekKey: "5월4주차", createdAt: "2026-05-26T03:00:00.000Z" });
+
+  saveAICoachingHistoryEntry(normal, storage);
+  saveAICoachingHistoryEntry(uploaded, storage);
+  saveAICoachingHistoryEntry(otherWeek, storage);
+
+  assert.equal(removeAICoachingHistoryEntries({ scope: "uploaded" }, storage).deletedCount, 1);
+  assert.deepEqual(readAICoachingHistoryEntries(storage).map((entry) => entry.riderName), ["김라이더", "박라이더"]);
+
+  assert.equal(removeAICoachingHistoryEntries({ scope: "week", weekKey: "5월4주차" }, storage).deletedCount, 1);
+  assert.deepEqual(readAICoachingHistoryEntries(storage).map((entry) => entry.riderName), ["김라이더"]);
 });

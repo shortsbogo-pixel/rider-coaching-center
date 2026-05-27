@@ -1,5 +1,6 @@
 import type { LocalAICoachingHistoryEntry, LocalWeeklyAIBriefingEntry } from "../types/aiCoaching";
 import type { OperationActionType, OperationApiResponse, OperationLogEntry } from "../types/operation";
+import type { AICoachingHistoryCleanupCriteria } from "./aiCoachingHistory";
 import type { ManagerActionChecklistRecord } from "./managerActionChecklist";
 import type { LocalMonthlyReportEntry } from "./monthlyReportHistory";
 import { getAuthHeader, getStoredUser } from "./authStore";
@@ -64,10 +65,30 @@ function postItems<T>(path: string, items: T[]) {
   });
 }
 
+export interface AICoachingHistoryCleanupSummary {
+  totalCount: number;
+  uploadedCount: number;
+  uploadedExamples: Array<{ id: string; riderName: string; weekKey: string }>;
+  weekKeys: string[];
+  riderNames: string[];
+}
+
+export interface AICoachingHistoryCleanupResult {
+  scope: AICoachingHistoryCleanupCriteria["scope"];
+  deletedCount: number;
+  remainingCount: number;
+}
+
 export const operationApi = {
   getAICoachingHistory: () => requestOperation<LocalAICoachingHistoryEntry[]>("/ai-coaching-history"),
   saveAICoachingHistory: (entry: LocalAICoachingHistoryEntry) => postItem("/ai-coaching-history", entry),
   migrateAICoachingHistory: (items: LocalAICoachingHistoryEntry[]) => postItems("/ai-coaching-history", items),
+  getAICoachingHistoryCleanupSummary: () => requestOperation<AICoachingHistoryCleanupSummary>("/ai-coaching-history/cleanup-summary"),
+  cleanupAICoachingHistory: (criteria: AICoachingHistoryCleanupCriteria & { backupAcknowledged?: boolean }) =>
+    requestOperation<AICoachingHistoryCleanupResult>("/ai-coaching-history/cleanup", {
+      method: "POST",
+      body: JSON.stringify(criteria)
+    }),
 
   getActionChecklists: () => requestOperation<ManagerActionChecklistRecord[]>("/action-checklists"),
   saveActionChecklist: (entry: ManagerActionChecklistRecord) => postItem("/action-checklists", entry),

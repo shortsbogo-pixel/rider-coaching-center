@@ -199,6 +199,7 @@ export function DataValidationPage() {
   const [summary, setSummary] = useState<ValidationSummary>(emptySummary);
   const [activeWeek, setActiveWeek] = useState("");
   const [isResettingParsed, setIsResettingParsed] = useState(false);
+  const [isResettingAnalysisCache, setIsResettingAnalysisCache] = useState(false);
   const [parsedResetMessage, setParsedResetMessage] = useState("");
 
   async function loadValidationSummary() {
@@ -217,7 +218,7 @@ export function DataValidationPage() {
   }, []);
 
   async function handleResetParsedData() {
-    const confirmed = window.confirm("기존 parsed 데이터만 초기화합니다. 원본 업로드 파일은 삭제하지 않습니다. 계속할까요?");
+    const confirmed = window.confirm("parsed 결과와 분석 캐시를 초기화합니다. AI 코칭 이력과 원본 업로드 파일은 삭제하지 않습니다. 계속할까요?");
     if (!confirmed) return;
 
     setIsResettingParsed(true);
@@ -229,13 +230,35 @@ export function DataValidationPage() {
       });
       const result = (await response.json().catch(() => ({}))) as { message?: string };
       if (!response.ok) throw new Error(result.message ?? "parsed 데이터를 초기화하지 못했습니다.");
-      setParsedResetMessage(result.message ?? "기존 parsed 데이터가 초기화되었습니다. 엑셀을 다시 업로드해주세요.");
+      setParsedResetMessage(`${result.message ?? "기존 parsed 데이터가 초기화되었습니다."} 엑셀을 다시 업로드해주세요.`);
       await loadValidationSummary();
       setActiveWeek("");
     } catch (error) {
       setParsedResetMessage(error instanceof Error ? error.message : "parsed 데이터를 초기화하지 못했습니다.");
     } finally {
       setIsResettingParsed(false);
+    }
+  }
+
+  async function handleResetAnalysisCache() {
+    const confirmed = window.confirm("분석 캐시만 초기화합니다. parsed 데이터와 AI 코칭 이력은 유지합니다. 계속할까요?");
+    if (!confirmed) return;
+
+    setIsResettingAnalysisCache(true);
+    setParsedResetMessage("");
+    try {
+      const response = await fetch("/api/uploads/analysis-cache/reset", {
+        method: "POST",
+        headers: getAuthHeader()
+      });
+      const result = (await response.json().catch(() => ({}))) as { message?: string };
+      if (!response.ok) throw new Error(result.message ?? "분석 캐시를 초기화하지 못했습니다.");
+      setParsedResetMessage(result.message ?? "분석 캐시가 초기화되었습니다. AI 코칭 이력은 유지했습니다.");
+      await loadValidationSummary();
+    } catch (error) {
+      setParsedResetMessage(error instanceof Error ? error.message : "분석 캐시를 초기화하지 못했습니다.");
+    } finally {
+      setIsResettingAnalysisCache(false);
     }
   }
 
@@ -304,7 +327,10 @@ export function DataValidationPage() {
         </div>
         <div className="button-row data-button-row">
           <button className="secondary-link-button icon-button" type="button" onClick={handleResetParsedData} disabled={isResettingParsed}>
-            기존 parsed 데이터 초기화
+            parsed + 분석 캐시 초기화
+          </button>
+          <button className="secondary-link-button icon-button" type="button" onClick={handleResetAnalysisCache} disabled={isResettingAnalysisCache}>
+            분석 캐시만 초기화
           </button>
           <a className="secondary-link-button icon-button" href="/upload">
             엑셀 재업로드 <ArrowRight size={16} aria-hidden="true" />

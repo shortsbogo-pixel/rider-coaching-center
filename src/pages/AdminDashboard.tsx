@@ -5,6 +5,7 @@ import riders from "../data/sampleRiders.json";
 import { MetricCard } from "../components/common/MetricCard";
 import { RequiredColumnHealth } from "../components/common/RequiredColumnHealth";
 import { SectionHeader } from "../components/common/SectionHeader";
+import { AICoachingHistoryManagementPanel } from "../components/admin/AICoachingHistoryManagementPanel";
 import { AICoachingHistoryPanel } from "../components/admin/AICoachingHistoryPanel";
 import { AIStatusPanel } from "../components/admin/AIStatusPanel";
 import { DataQualityWarningPanel } from "../components/admin/DataQualityWarningPanel";
@@ -44,6 +45,12 @@ import {
   readAICoachingHistoryEntries,
   saveAICoachingHistoryEntry
 } from "../utils/aiCoachingHistory";
+import {
+  filterHistoryForVisibleRiders,
+  getBatchBlockReason,
+  getBatchFailure,
+  isSuccessfulBatchResult
+} from "../utils/adminBatchCoaching";
 import { sortAdminRiderItems, type AdminRiderSortOption } from "../utils/adminRiderSort";
 import {
   buildMonthlyOperationReportSummary,
@@ -150,6 +157,12 @@ interface AICoachingResultState {
 interface AICopyStatusState {
   adminCopied?: boolean;
   riderCopied?: boolean;
+}
+
+interface ParsedStorageStatus {
+  status: "ok" | "needs_reset";
+  message: string;
+  errorCount: number;
 }
 
 type AdminTopicId = "briefing" | "operation" | "analysis" | "riders";
@@ -623,6 +636,11 @@ export function AdminDashboard() {
   const [messageSendHistory, setMessageSendHistory] = useState<MessageSendHistoryEntry[]>(() => readMessageSendHistoryEntries());
   const [operationLogs, setOperationLogs] = useState<OperationLogEntry[]>(() => safeReadOperationArray(operationStorageKeys.operationLogs) as OperationLogEntry[]);
   const [messageQueueStatusByKey, setMessageQueueStatusByKey] = useState<Record<string, string>>({});
+  const [parsedStorageStatus, setParsedStorageStatus] = useState<ParsedStorageStatus>({
+    status: "ok",
+    message: "",
+    errorCount: 0
+  });
 
   useEffect(() => {
     fetch("/api/uploads")
@@ -638,6 +656,14 @@ export function AdminDashboard() {
         setSelectedWeekKey((current) => current || getLatestWeekKey(uploads.map((item) => item.week)));
       })
       .catch(() => setUploadedWeeks([]));
+
+    fetch("/api/uploads/validation", { headers: getAuthHeader() })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const parsedStorage = data?.parsedStorage as ParsedStorageStatus | undefined;
+        if (parsedStorage) setParsedStorageStatus(parsedStorage);
+      })
+      .catch(() => undefined);
 
     fetch("/api/riders", { headers: getAuthHeader() })
       .then((response) => response.json())
@@ -791,7 +817,10 @@ export function AdminDashboard() {
     fetch(`/api/ai-coaching/history?weekKey=${encodeURIComponent(selectedWeekKey)}`, { headers: getAuthHeader() })
       .then((response) => response.ok ? response.json() : [])
       .then((history: AICoachingHistoryEntry[]) => {
+        const currentRiderIds = new Set(currentMetrics.map((metric) => metric.riderId));
+        const currentRiderNames = new Set(currentMetrics.map((metric) => metric.displayName));
         const restored = history.reduce<Record<string, AICoachingResultState>>((acc, item) => {
+          if (!currentRiderIds.has(item.riderId) && !currentRiderNames.has(item.riderName)) return acc;
           acc[`rider-${item.riderId}`] = {
             adminMessage: item.adminMessage,
             riderMessage: item.riderMessage,
@@ -812,7 +841,7 @@ export function AdminDashboard() {
       .catch(() => {
         // ignore history load failures
       });
-  }, [selectedWeekKey]);
+  }, [selectedWeekKey, currentMetrics]);
 
   const currentCompleted = currentMetrics.reduce((sum, metric) => sum + metric.totalCompleted, 0);
   const previousCompleted = previousMetrics.reduce((sum, metric) => sum + metric.totalCompleted, 0);
@@ -893,6 +922,11 @@ export function AdminDashboard() {
         latestAICoachingCreatedAt: getLatestLocalHistoryCreatedAt(metric.displayName, selectedWeekKey)
       };
     });
+  const visibleRiderNames = useMemo(() => riderComparisonsBase.map(({ metric }) => metric.displayName), [riderComparisonsBase]);
+  const visibleAICoachingHistory = useMemo(
+    () => filterHistoryForVisibleRiders(localAICoachingHistory, selectedWeekKey, visibleRiderNames),
+    [localAICoachingHistory, selectedWeekKey, visibleRiderNames]
+  );
 
   const riderComparisons = sortAdminRiderItems(riderComparisonsBase, riderSortOption)
     .slice(0, 10);
@@ -926,7 +960,7 @@ export function AdminDashboard() {
       changeRate
     })),
     actionRecords: managerActionRecords,
-    coachingHistory: localAICoachingHistory
+    coachingHistory: visibleAICoachingHistory
   });
   const weeklyAIBriefingHistory = localWeeklyBriefingHistory
     .filter((entry) => entry.weekKey.trim() === selectedWeekKey.trim())
@@ -961,7 +995,7 @@ export function AdminDashboard() {
     })),
     messageQueue: messageQueueItems,
     actionRecords: managerActionRecords,
-    coachingHistory: localAICoachingHistory,
+    coachingHistory: visibleAICoachingHistory,
     dataWarnings: dataQualityWarnings,
     monthlyReportSummary: monthlyOperationReport?.operationSummary
   });
@@ -1956,6 +1990,22 @@ export function AdminDashboard() {
 
   async function handleGenerateAICoachingForAll() {
     if (!currentMetrics.length || !selectedWeekKey) return;
+    const blockReason = getBatchBlockReason({
+      selectedWeekKey,
+      itemCount: currentMetrics.length,
+      parsedErrorCount: parsedStorageStatus.errorCount
+    });
+    if (blockReason) {
+      setBatchFailures([
+        {
+          riderId: "parsed-reset-required",
+          riderName: "재업로드 필요",
+          error: blockReason
+        }
+      ]);
+      setBatchStatus(blockReason);
+      return;
+    }
     setBatchLoading(true);
     setBatchStatus(`일괄 생성 시작 (${currentMetrics.length}명)`);
 
@@ -2017,8 +2067,14 @@ export function AdminDashboard() {
       }>;
 
       const nextResults: Record<string, AICoachingResultState> = {};
+      const parsedFailures: Array<{ riderId: string; riderName: string; error: string }> = [];
+      let successCount = 0;
       for (const item of results) {
         const sourceItem = items.find((candidate) => candidate.riderId === item.riderId);
+        if (!isSuccessfulBatchResult(item)) {
+          parsedFailures.push(getBatchFailure(item, sourceItem));
+          continue;
+        }
         const source = item.source ?? (item.isTemplate ? "template" : "gemma4");
         const entry = createAICoachingHistoryEntry({
           riderName: sourceItem?.riderName ?? item.riderId,
@@ -2052,14 +2108,27 @@ export function AdminDashboard() {
           templateVersion: item.templateVersion,
           createdAt: entry.createdAt
         };
+        successCount += 1;
       }
 
       setAiResultById((current) => ({ ...current, ...nextResults }));
-      setBatchProgress({ completed: results.length, total: results.length });
+      setBatchProgress({ completed: successCount, total: items.length });
 
-      const failures = results
-        .filter((item) => item.error)
-        .map((item) => ({ riderId: item.riderId, riderName: item.riderId, error: item.error ?? "알 수 없는 오류" }));
+      const failures = parsedFailures.length
+        ? [
+            {
+              riderId: "parsed-reset-required",
+              riderName: "재업로드 필요",
+              error: getBatchBlockReason({
+                selectedWeekKey,
+                itemCount: items.length,
+                parsedErrorCount: parsedFailures.length
+              })
+            }
+          ]
+        : results
+            .filter((item) => item.error)
+            .map((item) => getBatchFailure(item, items.find((candidate) => candidate.riderId === item.riderId)));
 
       if (failures.length) {
         setBatchFailures(failures);
@@ -2111,7 +2180,11 @@ export function AdminDashboard() {
         throw new Error(`히스토리 조회에 실패했습니다. (${response.status})`);
       }
 
-      const entries = (await response.json()) as AICoachingHistoryEntry[];
+      const currentRiderIds = new Set(currentMetrics.map((metric) => metric.riderId));
+      const currentRiderNames = new Set(currentMetrics.map((metric) => metric.displayName));
+      const entries = ((await response.json()) as AICoachingHistoryEntry[]).filter(
+        (entry) => currentRiderIds.has(entry.riderId) || currentRiderNames.has(entry.riderName)
+      );
       setHistoryEntries(entries);
       if (!entries.length) {
         setHistoryError("조건에 맞는 히스토리가 없습니다.");
@@ -2124,6 +2197,12 @@ export function AdminDashboard() {
   }
 
   function restoreHistoryEntry(entry: AICoachingHistoryEntry) {
+    const isCurrentRider = currentMetrics.some((metric) => metric.riderId === entry.riderId || metric.displayName === entry.riderName);
+    if (!isCurrentRider) {
+      setHistoryRestoreStatus("현재 분석 데이터에 없는 이력은 복원하지 않았습니다.");
+      window.setTimeout(() => setHistoryRestoreStatus(""), 3000);
+      return;
+    }
     const key = `rider-${entry.riderId}`;
     setAiResultById((current) => ({
       ...current,
@@ -2751,7 +2830,7 @@ export function AdminDashboard() {
             <button
               className="ai-coaching-button small"
               type="button"
-              disabled={batchLoading || currentMetrics.length === 0}
+              disabled={batchLoading || currentMetrics.length === 0 || parsedStorageStatus.errorCount > 0}
               onClick={handleGenerateAICoachingForAll}
             >
               {batchLoading ? "일괄 생성 중…" : "전체 AI 코칭 생성"}
@@ -2759,6 +2838,17 @@ export function AdminDashboard() {
             {batchStatus ? <span className="batch-status">{batchStatus}</span> : null}
           </div>
         </div>
+        {parsedStorageStatus.errorCount > 0 ? (
+          <div className="data-quality-warning-panel compact">
+            <div className="data-quality-title">
+              <strong>JSON 파싱 오류 {formatNumber(parsedStorageStatus.errorCount)}건 / 재업로드 필요</strong>
+              <span>전체 AI 코칭 제외</span>
+            </div>
+            <p className="data-quality-warning danger">
+              기존 parsed 데이터가 손상되었거나 이전 파서 기준입니다. /validation에서 parsed + 분석 캐시를 초기화한 뒤 엑셀을 다시 업로드하세요.
+            </p>
+          </div>
+        ) : null}
         <DataQualityWarningPanel warnings={dataQualityWarnings} compact />
         {batchProgress ? (
           <div className="batch-progress-row">
@@ -2842,6 +2932,17 @@ export function AdminDashboard() {
             ))}
           </div>
         ) : null}
+        <AICoachingHistoryManagementPanel
+          history={localAICoachingHistory}
+          weekOptions={weekOptions}
+          selectedWeekKey={selectedWeekKey}
+          onHistoryChanged={(entries) => {
+            setLocalAICoachingHistory(entries);
+            setHistoryEntries([]);
+            setAiResultById({});
+          }}
+          onOperationLogChanged={() => setOperationLogRevision((value) => value + 1)}
+        />
         <div className="rider-list">
           {riderComparisons.map(({ metric, previousCompleted, change, trendAnalysis }) => {
             const riderAiKey = `rider-${metric.riderId}`;

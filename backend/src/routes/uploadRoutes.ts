@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import { getUploadedWeeks, getValidationSummary, receiveUploadPreview, resetParsedUploads, saveUploadedExcel } from "../services/excelService";
+import { getUploadedWeeks, getValidationSummary, receiveUploadPreview, resetAnalysisCaches, resetParsedUploads, saveUploadedExcel } from "../services/excelService";
 
 const router = Router();
 const upload = multer({
@@ -38,6 +38,18 @@ router.post("/parsed/reset", async (req, res, next) => {
       return;
     }
     res.json(await resetParsedUploads());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/analysis-cache/reset", async (req, res, next) => {
+  try {
+    if (req.header("x-user-role") !== "admin") {
+      res.status(403).json({ message: "관리자 권한이 필요합니다." });
+      return;
+    }
+    res.json(await resetAnalysisCaches());
   } catch (error) {
     next(error);
   }

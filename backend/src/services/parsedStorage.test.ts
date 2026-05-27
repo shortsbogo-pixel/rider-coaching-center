@@ -21,7 +21,7 @@ async function withTempProject<T>(run: (rootDir: string) => Promise<T>) {
     return await run(rootDir);
   } finally {
     process.chdir(originalCwd);
-    await rm(rootDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 150 });
   }
 }
 
@@ -39,7 +39,8 @@ async function importExcelService(caseName: string) {
     }>;
     loadParsedOrders: () => Promise<OrderRecord[]>;
     saveUploadedExcel: (file: Express.Multer.File | undefined, week: string) => Promise<ParsedUpload>;
-    resetParsedUploads?: () => Promise<{ deletedCount: number; deletedFiles: string[] }>;
+    resetParsedUploads?: () => Promise<{ deletedCount: number; deletedFiles: string[]; analysisCachesCleared?: boolean; aiHistoryPreserved?: boolean }>;
+    resetAnalysisCaches?: () => Promise<{ analysisCachesCleared: boolean; aiHistoryPreserved: boolean }>;
   }>;
 }
 
@@ -152,8 +153,32 @@ test("resetParsedUploads removes only parsed result files", async () => {
 
     assert.equal(result.deletedCount, 1);
     assert.deepEqual(result.deletedFiles, ["5월2주차.json"]);
+    assert.equal(result.analysisCachesCleared, true);
+    assert.equal(result.aiHistoryPreserved, true);
     assert.equal(await readFile(uploadPath, "utf8"), "source");
     await assert.rejects(readFile(path.join(parsedDir, "5월2주차.json"), "utf8"));
     assert.equal(await readFile(path.join(parsedDir, ".gitkeep"), "utf8"), "");
+  });
+});
+
+test("resetAnalysisCaches clears analysis and rider caches without removing parsed or AI history data", async () => {
+  await withTempProject(async (rootDir) => {
+    const parsedDir = path.join(rootDir, "backend/src/data/parsed");
+    await writeFile(path.join(parsedDir, "5월2주차.json"), JSON.stringify(buildParsedUpload("5월2주차")), "utf8");
+    await writeFile(path.join(rootDir, "backend/src/data/analysisCache.json"), JSON.stringify([{ id: "all", weekKey: "all" }]), "utf8");
+    await writeFile(path.join(rootDir, "backend/src/data/riderProfileCache.json"), JSON.stringify([{ id: "uploaded-old", riderId: "uploaded-old" }]), "utf8");
+    await mkdir(path.join(rootDir, "backend/data"), { recursive: true });
+    await writeFile(path.join(rootDir, "backend/data/ai-coaching-history.json"), JSON.stringify([{ id: "history-1", riderName: "uploaded-old" }]), "utf8");
+
+    const service = await importExcelService("analysis-cache-reset");
+    assert.equal(typeof service.resetAnalysisCaches, "function");
+    const result = await service.resetAnalysisCaches!();
+
+    assert.equal(result.analysisCachesCleared, true);
+    assert.equal(result.aiHistoryPreserved, true);
+    assert.equal(JSON.parse(await readFile(path.join(rootDir, "backend/src/data/analysisCache.json"), "utf8")).length, 0);
+    assert.equal(JSON.parse(await readFile(path.join(rootDir, "backend/src/data/riderProfileCache.json"), "utf8")).length, 0);
+    assert.equal(JSON.parse(await readFile(path.join(rootDir, "backend/data/ai-coaching-history.json"), "utf8")).length, 1);
+    assert.equal(JSON.parse(await readFile(path.join(parsedDir, "5월2주차.json"), "utf8")).week, "5월2주차");
   });
 });

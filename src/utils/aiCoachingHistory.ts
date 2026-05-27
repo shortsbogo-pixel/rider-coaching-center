@@ -8,6 +8,17 @@ export interface StorageLike {
   setItem(key: string, value: string): void;
 }
 
+export type AICoachingHistoryCleanupCriteria =
+  | { scope: "uploaded" }
+  | { scope: "week"; weekKey: string }
+  | { scope: "rider"; riderName: string }
+  | { scope: "all" };
+
+export interface AICoachingHistoryCleanupResult {
+  deletedCount: number;
+  remainingCount: number;
+}
+
 interface CreateAICoachingHistoryEntryInput {
   riderName: string;
   weekKey: string;
@@ -36,6 +47,17 @@ function getStorage(storage?: StorageLike): StorageLike | null {
 
 function historyKey(riderName: string, weekKey: string) {
   return `${riderName.trim()}::${weekKey.trim()}`;
+}
+
+export function isUploadedAICoachingHistoryEntry(entry: Pick<LocalAICoachingHistoryEntry, "riderName">) {
+  return entry.riderName.trim().toLowerCase().startsWith("uploaded-");
+}
+
+function matchesCleanupCriteria(entry: LocalAICoachingHistoryEntry, criteria: AICoachingHistoryCleanupCriteria) {
+  if (criteria.scope === "all") return true;
+  if (criteria.scope === "uploaded") return isUploadedAICoachingHistoryEntry(entry);
+  if (criteria.scope === "week") return entry.weekKey.trim() === criteria.weekKey.trim();
+  return entry.riderName.trim() === criteria.riderName.trim();
 }
 
 function isHistoryEntry(value: unknown): value is LocalAICoachingHistoryEntry {
@@ -101,6 +123,25 @@ export function saveAICoachingHistoryEntry(entry: LocalAICoachingHistoryEntry, s
     return true;
   } catch {
     return false;
+  }
+}
+
+export function removeAICoachingHistoryEntries(criteria: AICoachingHistoryCleanupCriteria, storage?: StorageLike): AICoachingHistoryCleanupResult {
+  try {
+    const targetStorage = getStorage(storage);
+    if (!targetStorage) return { deletedCount: 0, remainingCount: 0 };
+    const entries = readAICoachingHistoryEntries(targetStorage);
+    const next = entries.filter((entry) => !matchesCleanupCriteria(entry, criteria));
+    targetStorage.setItem(AI_COACHING_HISTORY_KEY, JSON.stringify(next));
+    return {
+      deletedCount: entries.length - next.length,
+      remainingCount: next.length
+    };
+  } catch {
+    return {
+      deletedCount: 0,
+      remainingCount: readAICoachingHistoryEntries(storage).length
+    };
   }
 }
 
