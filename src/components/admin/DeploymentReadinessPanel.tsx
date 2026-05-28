@@ -209,6 +209,28 @@ function buildBetaReadinessItems(
       message: "STORAGE_MODE=json은 베타용입니다. 정식 운영 전 DB 전환과 백업 정책을 검토하세요."
     },
     {
+      id: "local-server-addresses",
+      label: "로컬 서버 테스트 주소",
+      status: "warning",
+      message:
+        "로컬 관리자 http://localhost:5174/admin · 로컬 라이더 http://localhost:5174/rider · 같은 와이파이는 http://<GALAXYBOOK_IP>:5174/admin 으로 접속합니다."
+    },
+    {
+      id: "local-server-api-base",
+      label: "현재 API base URL",
+      status: "warning",
+      message: getApiBaseUrl()
+        ? `현재 설정: ${getApiBaseUrl()}`
+        : "동일 origin/proxy 사용 중입니다. LAN 테스트는 VITE_API_BASE_URL=http://<GALAXYBOOK_IP>:4100 설정을 권장합니다."
+    },
+    {
+      id: "local-server-network-scope",
+      label: "같은 와이파이 접속",
+      status: "warning",
+      message:
+        "휴대폰/다른 PC는 갤럭시북5와 같은 Wi-Fi에 있어야 합니다. 외부 인터넷 접속은 Cloudflare Tunnel 또는 ngrok 같은 터널이 필요합니다."
+    },
+    {
       id: "beta-deployment-method",
       label: "배포 방식 선택",
       status: "warning",

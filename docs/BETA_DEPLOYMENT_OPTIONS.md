@@ -1,5 +1,11 @@
 # Beta Deployment Options
 
+## Local/LAN And Tunnel Guides
+
+- `docs/LOCAL_SERVER_BETA_GUIDE.md`: Galaxy Book 5 local server and same-Wi-Fi testing guide
+- `docs/TUNNEL_BETA_GUIDE.md`: Cloudflare Tunnel/ngrok external beta preparation guide
+- `.env.lan.example`: same-Wi-Fi LAN beta environment template
+
 ## Manus Handoff Links
 
 - `docs/MANUS_DEPLOYMENT_GUIDE.md`

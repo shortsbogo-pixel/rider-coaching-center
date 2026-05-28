@@ -140,3 +140,8 @@ Set-Content -Path "backend\data\monthly-reports.json" -Value "[]" -Encoding UTF8
 - 스크린샷 여부
 - PC/모바일 및 브라우저
 - 긴급도
+# Local/LAN And Tunnel Guides
+
+- `docs/LOCAL_SERVER_BETA_GUIDE.md`: Galaxy Book 5 local server and same-Wi-Fi testing guide
+- `docs/TUNNEL_BETA_GUIDE.md`: Cloudflare Tunnel/ngrok external beta preparation guide
+- `.env.lan.example`: same-Wi-Fi LAN beta environment template
